@@ -19,16 +19,12 @@ etcd_services:
       ETCD_OUT_FILE: "/var/log/kolla/etcd/etcd.log"
       KOLLA_CONFIG_STRATEGY: "{{ config_strategy }}"
     image: "{{ etcd_image_full }}"
-    host_in_groups: >-
-      {{
-      inventory_hostname in groups['control']
-      or (enable_kuryr | bool and inventory_hostname in groups['compute'])
-      }}
     volumes:
       - "{{ node_config_directory }}/etcd/:{{ container_config_directory }}/:ro"
       - "/etc/localtime:/etc/localtime:ro"
       - "kolla_etcd:/var/lib/etcd/"
       - "kolla_logs:/var/log/kolla/"
+    dimensions: "{{ etcd_dimensions }}"
 
 
 ####################
@@ -37,3 +33,4 @@ etcd_services:
 etcd_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/{{ kolla_base_distro }}-{{ kolla_install_type }}-etcd"
 etcd_tag: "{{ openstack_release }}"
 etcd_image_full: "{{ etcd_image }}:{{ etcd_tag }}"
+etcd_dimensions: "{{ default_container_dimensions }}"

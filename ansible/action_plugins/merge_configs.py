@@ -15,15 +15,54 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
 import collections
-import inspect
 import os
+import shutil
+import tempfile
 
+from ansible import constants
 from ansible.plugins import action
 from six import StringIO
 
 from oslo_config import iniparser
+
+_ORPHAN_SECTION = 'TEMPORARY_ORPHAN_VARIABLE_SECTION'
+
+DOCUMENTATION = '''
+---
+module: merge_configs
+short_description: Merge ini-style configs
+description:
+     - ConfigParser is used to merge several ini-style configs into one
+options:
+  dest:
+    description:
+      - The destination file name
+    required: True
+    type: str
+  sources:
+    description:
+      - A list of files on the destination node to merge together
+    default: None
+    required: True
+    type: str
+author: Sam Yaple
+'''
+
+EXAMPLES = '''
+Merge multiple configs:
+
+- hosts: database
+  tasks:
+    - name: Merge configs
+      merge_configs:
+        sources:
+          - "/tmp/config_1.cnf"
+          - "/tmp/config_2.cnf"
+          - "/tmp/config_3.cnf"
+        dest:
+          - "/etc/mysql/my.cnf"
+'''
 
 
 class OverrideConfigParser(iniparser.BaseParser):
@@ -34,6 +73,8 @@ class OverrideConfigParser(iniparser.BaseParser):
         self._cur_section = None
 
     def assignment(self, key, value):
+        if self._cur_section is None:
+            self.new_section(_ORPHAN_SECTION)
         cur_value = self._cur_section.get(key)
         if len(value) == 1 and value[0] == '':
             value = []
@@ -44,6 +85,7 @@ class OverrideConfigParser(iniparser.BaseParser):
 
     def parse(self, lineiter):
         self._cur_sections = collections.OrderedDict()
+        self._cur_section = None
         super(OverrideConfigParser, self).parse(lineiter)
 
         # merge _cur_sections into _sections
@@ -77,7 +119,8 @@ class OverrideConfigParser(iniparser.BaseParser):
                 write_key_value(key, values)
 
         for section in self._sections:
-            fp.write('[{}]\n'.format(section))
+            if section != _ORPHAN_SECTION:
+                fp.write('[{}]\n'.format(section))
             write_section(self._sections[section])
             fp.write('\n')
 
@@ -91,6 +134,15 @@ class ActionModule(action.ActionBase):
         if os.access(source, os.R_OK):
             with open(source, 'r') as f:
                 template_data = f.read()
+
+            # set search path to mimic 'template' module behavior
+            searchpath = [
+                self._loader._basedir,
+                os.path.join(self._loader._basedir, 'templates'),
+                os.path.dirname(source),
+            ]
+            self._templar.environment.loader.searchpath = searchpath
+
             result = self._templar.template(template_data)
             fakefile = StringIO(result)
             config.parse(fakefile)
@@ -99,17 +151,7 @@ class ActionModule(action.ActionBase):
     def run(self, tmp=None, task_vars=None):
 
         result = super(ActionModule, self).run(tmp, task_vars)
-
-        # NOTE(jeffrey4l): Ansible 2.1 add a remote_user param to the
-        # _make_tmp_path function.  inspect the number of the args here. In
-        # this way, ansible 2.0 and ansible 2.1 are both supported
-        make_tmp_path_args = inspect.getargspec(self._make_tmp_path)[0]
-        if not tmp and len(make_tmp_path_args) == 1:
-            tmp = self._make_tmp_path()
-        if not tmp and len(make_tmp_path_args) == 2:
-            remote_user = (task_vars.get('ansible_user')
-                           or self._play_context.remote_user)
-            tmp = self._make_tmp_path(remote_user)
+        del tmp  # not used
 
         sources = self._task.args.get('sources', None)
 
@@ -125,22 +167,34 @@ class ActionModule(action.ActionBase):
 
         fakefile = StringIO()
         config.write(fakefile)
-
-        remote_path = self._connection._shell.join_path(tmp, 'src')
-        xfered = self._transfer_data(remote_path, fakefile.getvalue())
+        full_source = fakefile.getvalue()
         fakefile.close()
 
-        new_module_args = self._task.args.copy()
-        new_module_args.pop('sources', None)
+        local_tempdir = tempfile.mkdtemp(dir=constants.DEFAULT_LOCAL_TMP)
 
-        new_module_args.update(
-            dict(
-                src=xfered
+        try:
+            result_file = os.path.join(local_tempdir, 'source')
+            with open(result_file, 'w') as f:
+                f.write(full_source)
+
+            new_task = self._task.copy()
+            new_task.args.pop('sources', None)
+
+            new_task.args.update(
+                dict(
+                    src=result_file
+                )
             )
-        )
 
-        result.update(self._execute_module(module_name='copy',
-                                           module_args=new_module_args,
-                                           task_vars=task_vars,
-                                           tmp=tmp))
+            copy_action = self._shared_loader_obj.action_loader.get(
+                'copy',
+                task=new_task,
+                connection=self._connection,
+                play_context=self._play_context,
+                loader=self._loader,
+                templar=self._templar,
+                shared_loader_obj=self._shared_loader_obj)
+            result.update(copy_action.run(task_vars=task_vars))
+        finally:
+            shutil.rmtree(local_tempdir)
         return result

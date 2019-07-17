@@ -2,23 +2,20 @@
 # of appearance. Changing the order has an impact on the overall integration
 # process, which may cause wedges in the gate later.
 bandit>=1.1.0 # Apache-2.0
-bashate>=0.2 # Apache-2.0
+bashate>=0.5.1 # Apache-2.0
 beautifulsoup4>=4.6.0 # MIT
 coverage!=4.4,>=4.0 # Apache-2.0
-doc8 # Apache-2.0
-extras # MIT
-hacking>=0.10.0
-openstackdocstheme>=1.11.0 # Apache-2.0
-oslo.log>=3.22.0 # Apache-2.0
-oslotest>=1.10.0 # Apache-2.0
-reno!=2.3.1,>=1.8.0 # Apache-2.0
+doc8>=0.6.0 # Apache-2.0
+extras>=1.0.0 # MIT
+hacking>=1.1.0,<1.2.0 # Apache-2.0
+oslo.log>=3.36.0 # Apache-2.0
+oslotest>=3.2.0 # Apache-2.0
 PrettyTable<0.8,>=0.7.1 # BSD
-PyYAML>=3.10.0 # MIT
+PyYAML>=3.12 # MIT
 python-ceilometerclient>=2.5.0 # Apache-2.0
-python-neutronclient>=6.3.0 # Apache-2.0
-python-openstackclient!=3.10.0,>=3.3.0 # Apache-2.0
+python-neutronclient>=6.7.0 # Apache-2.0
+python-openstackclient>=3.12.0 # Apache-2.0
 pytz>=2013.6 # MIT
-sphinx>=1.6.2 # BSD
-testrepository>=0.0.18 # Apache-2.0/BSD
+stestr>=2.0.0 # Apache-2.0
 testscenarios>=0.4 # Apache-2.0/BSD
-testtools>=1.4.0 # MIT
+testtools>=2.2.0 # MIT

@@ -1,14 +1,15 @@
+{% set interface = swift_replication_interface if 'replicat' in service_name else swift_storage_interface %}
 [DEFAULT]
-bind_ip = {{ hostvars[inventory_hostname]['ansible_' + storage_interface]['ipv4']['address'] }}
+bind_ip = {{ hostvars[inventory_hostname]['ansible_' + interface]['ipv4']['address'] }}
 bind_port = {{ swift_object_server_port }}
 devices = {{ swift_devices_mount_point }}
 mount_check = false
 
-log_udp_host = {{ api_interface_address }}
-log_udp_port = {{ fluentd_syslog_port }}
+log_udp_host = {{ syslog_server }}
+log_udp_port = {{ syslog_udp_port }}
 log_name = {{ service_name }}
-log_facility = LOG_LOCAL0
-log_level = INFO
+log_facility = {{ syslog_swift_facility }}
+log_level = {{ swift_log_level }}
 workers = {{ openstack_service_workers }}
 
 [pipeline:main]
@@ -20,6 +21,9 @@ pipeline = object-server
 
 [app:object-server]
 use = egg:swift#object
+{% if swift_has_replication_network %}
+replication_server = {{ service_name == 'swift-object-replication-server' }}
+{% endif %}
 
 {% if service_name == 'swift-object-auditor' %}
 [object-auditor]
@@ -27,7 +31,7 @@ use = egg:swift#object
 
 [object-replicator]
 {% if service_name == 'swift-object-replicator' %}
-sync_module = {replication_ip}:{meta}:object
+rsync_module = {replication_ip}:{meta}:object
 {% endif %}
 
 {% if service_name == 'swift-object-updater' %}

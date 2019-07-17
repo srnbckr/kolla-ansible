@@ -12,7 +12,27 @@ influxdb_services:
       - "/etc/localtime:/etc/localtime:ro"
       - "influxdb:/var/lib/influxdb"
       - "kolla_logs:/var/log/kolla/"
+    dimensions: "{{ influxdb_dimensions }}"
+    haproxy:
+      influxdb_admin:
+        enabled: "{{ enable_influxdb }}"
+        mode: "http"
+        external: false
+        port: "{{ influxdb_admin_port }}"
+      influxdb_http:
+        enabled: "{{ enable_influxdb }}"
+        mode: "http"
+        external: false
+        port: "{{ influxdb_http_port }}"
 
+####################
+# InfluxDB
+####################
+
+# Enable the disk based time series index (recommended for all users). For
+# more information see here:
+# https://docs.influxdata.com/influxdb/v1.7/concepts/time-series-index/
+influxdb_enable_tsi: True
 
 ####################
 # Docker
@@ -20,3 +40,4 @@ influxdb_services:
 influxdb_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/{{ kolla_base_distro }}-{{ kolla_install_type }}-influxdb"
 influxdb_tag: "{{ openstack_release }}"
 influxdb_image_full: "{{ influxdb_image }}:{{ influxdb_tag }}"
+influxdb_dimensions: "{{ default_container_dimensions }}"

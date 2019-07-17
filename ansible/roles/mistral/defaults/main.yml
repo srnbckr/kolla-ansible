@@ -7,36 +7,48 @@ mistral_services:
     group: mistral-api
     enabled: true
     image: "{{ mistral_api_image_full }}"
-    volumes:
-      - "{{ node_config_directory }}/mistral-api/:{{ container_config_directory }}/:ro"
-      - "/etc/localtime:/etc/localtime:ro"
-      - "kolla_logs:/var/log/kolla/"
+    volumes: "{{ mistral_api_default_volumes + mistral_api_extra_volumes }}"
+    dimensions: "{{ mistral_api_dimensions }}"
+    haproxy:
+      mistral_api:
+        enabled: "{{ enable_mistral }}"
+        mode: "http"
+        external: false
+        port: "{{ mistral_api_port }}"
+      mistral_api_external:
+        enabled: "{{ enable_mistral }}"
+        mode: "http"
+        external: true
+        port: "{{ mistral_api_port }}"
   mistral-engine:
     container_name: mistral_engine
     group: mistral-engine
     enabled: true
     image: "{{ mistral_engine_image_full }}"
-    volumes:
-      - "{{ node_config_directory }}/mistral-engine/:{{ container_config_directory }}/:ro"
-      - "/etc/localtime:/etc/localtime:ro"
-      - "kolla_logs:/var/log/kolla/"
+    volumes: "{{ mistral_engine_default_volumes + mistral_engine_extra_volumes }}"
+    dimensions: "{{ mistral_engine_dimensions }}"
+  mistral-event-engine:
+    container_name: mistral_event_engine
+    group: mistral-event-engine
+    enabled: true
+    image: "{{ mistral_event_engine_image_full }}"
+    volumes: "{{ mistral_event_engine_default_volumes + mistral_event_engine_extra_volumes }}"
+    dimensions: "{{ mistral_event_engine_dimensions }}"
   mistral-executor:
     container_name: mistral_executor
     group: mistral-executor
     enabled: true
     image: "{{ mistral_executor_image_full }}"
-    volumes:
-      - "{{ node_config_directory }}/mistral-executor/:{{ container_config_directory }}/:ro"
-      - "/etc/localtime:/etc/localtime:ro"
-      - "kolla_logs:/var/log/kolla/"
+    volumes: "{{ mistral_executor_default_volumes + mistral_executor_extra_volumes }}"
+    dimensions: "{{ mistral_executor_dimensions }}"
 
 
 ####################
 # Database
 ####################
 mistral_database_name: "mistral"
-mistral_database_user: "mistral"
-mistral_database_address: "{{ kolla_internal_fqdn }}:{{ database_port }}"
+mistral_database_user: "{% if use_preconfigured_databases | bool and use_common_mariadb_user | bool %}{{ database_user }}{% else %}mistral{% endif %}"
+mistral_database_address: "{{ database_address }}:{{ database_port }}"
 
 
 ####################
@@ -49,6 +61,10 @@ mistral_engine_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ 
 mistral_engine_tag: "{{ mistral_tag }}"
 mistral_engine_image_full: "{{ mistral_engine_image }}:{{ mistral_engine_tag }}"
 
+mistral_event_engine_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/{{ kolla_base_distro }}-{{ mistral_install_type }}-mistral-event-engine"
+mistral_event_engine_tag: "{{ mistral_tag }}"
+mistral_event_engine_image_full: "{{ mistral_event_engine_image }}:{{ mistral_event_engine_tag }}"
+
 mistral_executor_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/{{ kolla_base_distro }}-{{ mistral_install_type }}-mistral-executor"
 mistral_executor_tag: "{{ mistral_tag }}"
 mistral_executor_image_full: "{{ mistral_executor_image }}:{{ mistral_executor_tag }}"
@@ -57,6 +73,37 @@ mistral_api_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ doc
 mistral_api_tag: "{{ mistral_tag }}"
 mistral_api_image_full: "{{ mistral_api_image }}:{{ mistral_api_tag }}"
 
+mistral_engine_dimensions: "{{ default_container_dimensions }}"
+mistral_event_engine_dimensions: "{{ default_container_dimensions }}"
+mistral_executor_dimensions: "{{ default_container_dimensions }}"
+mistral_api_dimensions: "{{ default_container_dimensions }}"
+
+mistral_engine_default_volumes:
+  - "{{ node_config_directory }}/mistral-engine/:{{ container_config_directory }}/:ro"
+  - "/etc/localtime:/etc/localtime:ro"
+  - "kolla_logs:/var/log/kolla/"
+  - "{{ kolla_dev_repos_directory ~ '/mistral/mistral:/var/lib/kolla/venv/lib/python2.7/site-packages/mistral' if mistral_dev_mode | bool else '' }}"
+mistral_event_engine_default_volumes:
+  - "{{ node_config_directory }}/mistral-event-engine/:{{ container_config_directory }}/:ro"
+  - "/etc/localtime:/etc/localtime:ro"
+  - "kolla_logs:/var/log/kolla/"
+  - "{{ kolla_dev_repos_directory ~ '/mistral/mistral:/var/lib/kolla/venv/lib/python2.7/site-packages/mistral' if mistral_dev_mode | bool else '' }}"
+mistral_executor_default_volumes:
+  - "{{ node_config_directory }}/mistral-executor/:{{ container_config_directory }}/:ro"
+  - "/etc/localtime:/etc/localtime:ro"
+  - "kolla_logs:/var/log/kolla/"
+  - "{{ kolla_dev_repos_directory ~ '/mistral/mistral:/var/lib/kolla/venv/lib/python2.7/site-packages/mistral' if mistral_dev_mode | bool else '' }}"
+mistral_api_default_volumes:
+  - "{{ node_config_directory }}/mistral-api/:{{ container_config_directory }}/:ro"
+  - "/etc/localtime:/etc/localtime:ro"
+  - "kolla_logs:/var/log/kolla/"
+  - "{{ kolla_dev_repos_directory ~ '/mistral/mistral:/var/lib/kolla/venv/lib/python2.7/site-packages/mistral' if mistral_dev_mode | bool else '' }}"
+
+mistral_extra_volumes: "{{ default_extra_volumes }}"
+mistral_engine_extra_volumes: "{{ mistral_extra_volumes }}"
+mistral_event_engine_extra_volumes: "{{ mistral_extra_volumes }}"
+mistral_executor_extra_volumes: "{{ mistral_extra_volumes }}"
+mistral_api_extra_volumes: "{{ mistral_extra_volumes }}"
 
 ####################
 # OpenStack
@@ -70,3 +117,11 @@ mistral_logging_debug: "{{ openstack_logging_debug }}"
 mistral_keystone_user: "mistral"
 
 openstack_mistral_auth: "{{ openstack_auth }}"
+
+####################
+# Kolla
+####################
+mistral_git_repository: "{{ kolla_dev_repos_git }}/{{ project_name }}"
+mistral_dev_repos_pull: "{{ kolla_dev_repos_pull }}"
+mistral_dev_mode: "{{ kolla_dev_mode }}"
+mistral_source_version: "{{ kolla_source_version }}"

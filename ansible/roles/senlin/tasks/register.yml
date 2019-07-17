@@ -1,5 +1,6 @@
 ---
 - name: Creating the Senlin service and endpoint
+  become: true
   kolla_toolbox:
     module_name: "kolla_keystone_service"
     module_args:
@@ -10,9 +11,8 @@
       url: "{{ item.url }}"
       interface: "{{ item.interface }}"
       region_name: "{{ openstack_region_name }}"
-      auth: "{{ '{{ openstack_senlin_auth }}' }}"
-    module_extra_vars:
-      openstack_senlin_auth: "{{ openstack_senlin_auth }}"
+      auth: "{{ openstack_senlin_auth }}"
+      endpoint_type: "{{ openstack_interface }}"
   run_once: True
   with_items:
     - {'interface': 'admin', 'url': '{{ senlin_admin_endpoint }}'}
@@ -20,6 +20,7 @@
     - {'interface': 'public', 'url': '{{ senlin_public_endpoint }}'}
 
 - name: Creating the Senlin project, user, and role
+  become: true
   kolla_toolbox:
     module_name: "kolla_keystone_user"
     module_args:
@@ -28,7 +29,6 @@
       password: "{{ senlin_keystone_password }}"
       role: "admin"
       region_name: "{{ openstack_region_name }}"
-      auth: "{{ '{{ openstack_senlin_auth }}' }}"
-    module_extra_vars:
-      openstack_senlin_auth: "{{ openstack_senlin_auth }}"
+      auth: "{{ openstack_senlin_auth }}"
+      endpoint_type: "{{ openstack_interface }}"
   run_once: True

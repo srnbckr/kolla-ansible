@@ -1,18 +1,18 @@
 ---
 - name: Creating the Sahara service and endpoint
+  become: true
   kolla_toolbox:
     module_name: "kolla_keystone_service"
     module_args:
       service_name: "sahara"
-      service_type: "data_processing"
+      service_type: "data-processing"
       description: "Sahara Data Processing"
       endpoint_region: "{{ openstack_region_name }}"
       url: "{{ item.url }}"
       interface: "{{ item.interface }}"
       region_name: "{{ openstack_region_name }}"
-      auth: "{{ '{{ openstack_sahara_auth }}' }}"
-    module_extra_vars:
-      openstack_sahara_auth: "{{ openstack_sahara_auth }}"
+      auth: "{{ openstack_sahara_auth }}"
+      endpoint_type: "{{ openstack_interface }}"
   run_once: True
   with_items:
     - {'interface': 'admin', 'url': '{{ sahara_admin_endpoint }}'}
@@ -20,6 +20,7 @@
     - {'interface': 'public', 'url': '{{ sahara_public_endpoint }}'}
 
 - name: Creating the Sahara project, user, and role
+  become: true
   kolla_toolbox:
     module_name: "kolla_keystone_user"
     module_args:
@@ -28,7 +29,6 @@
       password: "{{ sahara_keystone_password }}"
       role: "admin"
       region_name: "{{ openstack_region_name }}"
-      auth: "{{ '{{ openstack_sahara_auth }}' }}"
-    module_extra_vars:
-      openstack_sahara_auth: "{{ openstack_sahara_auth }}"
+      auth: "{{ openstack_sahara_auth }}"
+      endpoint_type: "{{ openstack_interface }}"
   run_once: True

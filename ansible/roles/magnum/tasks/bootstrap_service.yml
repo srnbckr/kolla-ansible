@@ -2,6 +2,7 @@
 - name: Running Magnum bootstrap container
   vars:
     magnum_api: "{{ magnum_services['magnum-api'] }}"
+  become: true
   kolla_docker:
     action: "start_container"
     common_options: "{{ docker_common_options }}"
@@ -14,6 +15,6 @@
       BOOTSTRAP:
     name: "bootstrap_magnum"
     restart_policy: "never"
-    volumes: "{{ magnum_api.volumes }}"
+    volumes: "{{ magnum_api.volumes|reject('equalto', '')|list }}"
   run_once: True
   delegate_to: "{{ groups[magnum_api.group][0] }}"

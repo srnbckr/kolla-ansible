@@ -1,33 +1,53 @@
 ---
 - name: Setting sysctl values
   sysctl: name={{ item.name }} value={{ item.value }} sysctl_set=yes
+  become: true
   with_items:
     - { name: "net.ipv4.ip_nonlocal_bind", value: 1}
+    - { name: "net.ipv6.ip_nonlocal_bind", value: 1}
     - { name: "net.unix.max_dgram_qlen", value: 128}
-  when: set_sysctl | bool
+  when:
+    - set_sysctl | bool
 
 - name: Ensuring config directories exist
   file:
     path: "{{ node_config_directory }}/{{ item.key }}"
     state: "directory"
-    recurse: yes
+    owner: "{{ config_owner_user }}"
+    group: "{{ config_owner_group }}"
+    mode: "0770"
+  become: true
   when:
     - inventory_hostname in groups[item.value.group]
     - item.value.enabled | bool
   with_dict: "{{ haproxy_services }}"
 
+- name: Ensuring service config subdir exists
+  vars:
+    service: "{{ haproxy_services['haproxy'] }}"
+  file:
+    path: "{{ node_config_directory }}/haproxy/services.d"
+    state: "directory"
+    owner: "{{ config_owner_user }}"
+    group: "{{ config_owner_group }}"
+    mode: "0770"
+  become: true
+  when:
+    - inventory_hostname in groups[service.group]
+    - service.enabled | bool
+
 - name: Copying over config.json files for services
   template:
     src: "{{ item.key }}.json.j2"
     dest: "{{ node_config_directory }}/{{ item.key }}/config.json"
-  register: haproxy_config_jsons
+    mode: "0660"
+  become: true
   when:
     - inventory_hostname in groups[item.value.group]
     - item.value.enabled | bool
   with_dict: "{{ haproxy_services }}"
   notify:
     - "Restart {{ item.key }} container"
-    - Ensuring latest haproxy config is used
 
 - name: Copying over haproxy.cfg
   vars:
@@ -35,17 +55,24 @@
   template:
     src: "{{ item }}"
     dest: "{{ node_config_directory }}/haproxy/haproxy.cfg"
-  register: haproxy_cfg
+    mode: "0660"
+  become: true
   when:
     - inventory_hostname in groups[service.group]
     - service.enabled | bool
   with_first_found:
-    - "{{ node_custom_config }}/haproxy/{{ inventory_hostname }}/haproxy.cfg"
-    - "{{ node_custom_config }}/haproxy/haproxy.cfg"
-    - "haproxy.cfg.j2"
+    - "{{ node_custom_config }}/haproxy/{{ inventory_hostname }}/haproxy_main.cfg"
+    - "{{ node_custom_config }}/haproxy/haproxy_main.cfg"
+    - "haproxy_main.cfg.j2"
   notify:
     - Restart haproxy container
-    - Ensuring latest haproxy config is used
+
+- name: Load and persist keepalived module
+  import_role:
+    role: module-load
+  vars:
+    modules:
+      - {'name': ip_vs }
 
 - name: Copying over keepalived.conf
   vars:
@@ -53,7 +80,8 @@
   template:
     src: "{{ item }}"
     dest: "{{ node_config_directory }}/keepalived/keepalived.conf"
-  register: keepalived_conf
+    mode: "0660"
+  become: true
   when:
     - inventory_hostname in groups[service.group]
     - service.enabled | bool
@@ -70,7 +98,8 @@
   copy:
     src: "{{ kolla_external_fqdn_cert }}"
     dest: "{{ node_config_directory }}/haproxy/{{ item }}"
-  register: haproxy_pem
+    mode: "0660"
+  become: true
   when:
     - kolla_enable_tls_external | bool
     - inventory_hostname in groups[service.group]
@@ -79,19 +108,37 @@
     - "haproxy.pem"
   notify:
     - Restart haproxy container
-    - Ensuring latest haproxy config is used
+
+- name: Copying over haproxy start script
+  vars:
+    service: "{{ haproxy_services['haproxy'] }}"
+  template:
+    src: "{{ item }}"
+    dest: "{{ node_config_directory }}/haproxy/haproxy_run.sh"
+    mode: "0770"
+  become: true
+  when:
+    - inventory_hostname in groups[service.group]
+    - service.enabled | bool
+  with_first_found:
+    - "{{ node_custom_config }}/haproxy/{{ inventory_hostname }}/haproxy_run.sh"
+    - "{{ node_custom_config }}/haproxy/haproxy_run.sh"
+    - "haproxy_run.sh.j2"
+  notify:
+    - Restart haproxy container
 
 - name: Check haproxy containers
+  become: true
   kolla_docker:
     action: "compare_container"
     common_options: "{{ docker_common_options }}"
     name: "{{ item.value.container_name }}"
     image: "{{ item.value.image }}"
     volumes: "{{ item.value.volumes }}"
+    dimensions: "{{ item.value.dimensions }}"
     privileged: "{{ item.value.privileged | default(False) }}"
-  register: check_haproxy_containers
   when:
-    - action != "config"
+    - kolla_action != "config"
     - inventory_hostname in groups[item.value.group]
     - item.value.enabled | bool
   with_dict: "{{ haproxy_services }}"

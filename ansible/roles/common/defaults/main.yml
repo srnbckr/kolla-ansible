@@ -1,4 +1,6 @@
 ---
+project_name: "common"
+
 # Due to the way we do our inventory, ansible does not pick up on the fact that
 # this role has already run. We can track what has run with host facts.
 common_run: False
@@ -6,6 +8,7 @@ common_run: False
 common_services:
   fluentd:
     container_name: fluentd
+    enabled: "{{ enable_fluentd | bool }}"
     image: "{{ fluentd_image_full }}"
     environment:
       KOLLA_CONFIG_STRATEGY: "{{ config_strategy }}"
@@ -13,8 +16,10 @@ common_services:
       - "{{ node_config_directory }}/fluentd/:{{ container_config_directory }}/:ro"
       - "/etc/localtime:/etc/localtime:ro"
       - "kolla_logs:/var/log/kolla/"
+    dimensions: "{{ fluentd_dimensions }}"
   kolla-toolbox:
     container_name: kolla_toolbox
+    enabled: True
     image: "{{ kolla_toolbox_image_full }}"
     environment:
       ANSIBLE_NOCOLOR: "1"
@@ -26,9 +31,11 @@ common_services:
       - "/dev/:/dev/"
       - "/run/:/run/:shared"
       - "kolla_logs:/var/log/kolla/"
-# DUMMY_ENVIRONMENT is needed because empty environment is not supported
+    dimensions: "{{ kolla_toolbox_dimensions }}"
+  # DUMMY_ENVIRONMENT is needed because empty environment is not supported
   cron:
     container_name: cron
+    enabled: True
     image: "{{ cron_image_full }}"
     environment:
       DUMMY_ENVIRONMENT: kolla_useless_env
@@ -36,23 +43,40 @@ common_services:
       - "{{ node_config_directory }}/cron/:{{ container_config_directory }}/:ro"
       - "/etc/localtime:/etc/localtime:ro"
       - "kolla_logs:/var/log/kolla/"
+    dimensions: "{{ cron_dimensions }}"
 
+#######################
+# TLS and authenication
+#######################
+
+fluentd_elasticsearch_path: ""
+fluentd_elasticsearch_scheme: "http"
+fluentd_elasticsearch_user: ""
+fluentd_elasticsearch_password: ""
+fluentd_elasticsearch_ssl_version: "TLSv1_2"
+fluentd_elasticsearch_ssl_verify: "true"
 
 ####################
 # Docker
 ####################
-kolla_toolbox_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/{{ kolla_base_distro }}-{{ kolla_install_type }}-kolla-toolbox"
-kolla_toolbox_tag: "{{ openstack_release }}"
+common_install_type: "{{ kolla_install_type }}"
+common_tag: "{{ openstack_release }}"
+
+cron_dimensions: "{{ default_container_dimensions }}"
+kolla_toolbox_dimensions: "{{ default_container_dimensions }}"
+fluentd_dimensions: "{{ default_container_dimensions }}"
+
+kolla_toolbox_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/{{ kolla_base_distro }}-{{ common_install_type }}-kolla-toolbox"
+kolla_toolbox_tag: "{{ common_tag }}"
 kolla_toolbox_image_full: "{{ kolla_toolbox_image }}:{{ kolla_toolbox_tag }}"
 
-cron_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/{{ kolla_base_distro }}-{{ kolla_install_type }}-cron"
-cron_tag: "{{ openstack_release }}"
+cron_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/{{ kolla_base_distro }}-{{ common_install_type }}-cron"
+cron_tag: "{{ common_tag }}"
 cron_image_full: "{{ cron_image }}:{{ cron_tag }}"
 
-fluentd_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/{{ kolla_base_distro }}-{{ kolla_install_type }}-fluentd"
-fluentd_tag: "{{ openstack_release }}"
+fluentd_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/{{ kolla_base_distro }}-{{ common_install_type }}-fluentd"
+fluentd_tag: "{{ common_tag }}"
 fluentd_image_full: "{{ fluentd_image }}:{{ fluentd_tag }}"
 
-kubetoolbox_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/{{ kolla_base_distro }}-{{ kolla_install_type }}-kubetoolbox"
-kubetoolbox_tag: "{{ openstack_release }}"
-kubetoolbox_image_full: "{{ kubetoolbox_image }}:{{ kubetoolbox_tag }}"
+syslog_swift_facility: "local0"
+syslog_haproxy_facility: "local1"

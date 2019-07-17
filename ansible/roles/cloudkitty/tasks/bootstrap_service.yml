@@ -2,6 +2,7 @@
 - name: Running Cloudkitty bootstrap container
   vars:
     cloudkitty_api: "{{ cloudkitty_services['cloudkitty-api'] }}"
+  become: true
   kolla_docker:
     action: "start_container"
     common_options: "{{ docker_common_options }}"
@@ -14,6 +15,6 @@
       BOOTSTRAP:
     name: "bootstrap_cloudkitty"
     restart_policy: "never"
-    volumes: "{{ cloudkitty_api.volumes }}"
+    volumes: "{{ cloudkitty_api.volumes|reject('equalto', '')|list }}"
   run_once: True
   delegate_to: "{{ groups[cloudkitty_api.group][0] }}"

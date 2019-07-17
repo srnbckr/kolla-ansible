@@ -10,7 +10,24 @@ memcached_services:
     volumes:
       - "{{ node_config_directory }}/memcached/:{{ container_config_directory }}/:ro"
       - "/etc/localtime:/etc/localtime:ro"
+    dimensions: "{{ memcached_dimensions }}"
+    haproxy:
+      memcached:
+        enabled: "{{ enable_memcached|bool and enable_haproxy_memcached|bool }}"
+        mode: "tcp"
+        port: "{{ memcached_port }}"
+        frontend_tcp_extra:
+          - "option clitcpka"
+          - "timeout client 3600s"
+        backend_tcp_extra:
+          - "option srvtcpka"
+          - "timeout server 3600s"
+        custom_member_list: "{{ haproxy_members.split(';') }}"
 
+####################
+# HAProxy
+####################
+haproxy_members: "{% for host in groups['memcached'] %}server {{ hostvars[host]['ansible_hostname'] }} {{ hostvars[host]['ansible_' + hostvars[host]['api_interface']]['ipv4']['address'] }}:{{ memcached_port }} check inter 2000 rise 2 fall 5{% if not loop.first %} backup{% endif %};{% endfor %}"
 
 ####################
 # Docker
@@ -18,8 +35,12 @@ memcached_services:
 memcached_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/{{ kolla_base_distro }}-{{ kolla_install_type }}-memcached"
 memcached_tag: "{{ openstack_release }}"
 memcached_image_full: "{{ memcached_image }}:{{ memcached_tag }}"
+memcached_dimensions: "{{ default_container_dimensions }}"
 
 ####################
 # Memcached options
 ####################
 memcached_connection_limit: "5000"
+# NOTE(jeffrey4l): max memory to use for items in megabytes. default is 64MB,
+# which is too small for production environment.
+memcached_max_memory: "256"

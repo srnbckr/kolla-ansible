@@ -54,7 +54,7 @@ not to. It appears that [Nova][] has recently fixed the issue and
 [Neutron][] is making progress
 
 [documented]: https://github.com/openstack/nova/blob/da59d3228125d7e7427c0ba70180db17c597e8fb/nova/openstack/common/db/sqlalchemy/session.py#L180-196
-[Nova]: http://specs.openstack.org/openstack/nova-specs/specs/kilo/approved/lock-free-quota-management.html
+[Nova]: https://specs.openstack.org/openstack/nova-specs/specs/kilo/approved/lock-free-quota-management.html
 [Neutron]: https://bugs.launchpad.net/neutron/+bug/1364358 https://bugs.launchpad.net/neutron/+bug/1331564
 
 Testing should be performed as part of the Galera implementation to verify
@@ -175,7 +175,7 @@ not be reliably deployed in an active/active or active/passive fashion.
 
 In general, the Kolla HA environment looks like:
 
-![Image](https://git.openstack.org/cgit/openstack/kolla/plain/specs/ha.svg)
+![Image](https://opendev.org/openstack/kolla/plain/specs/ha.svg)
 
 Security impact
 ---------------

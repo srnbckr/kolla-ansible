@@ -11,6 +11,18 @@ karbor_services:
       - "{{ node_config_directory }}/karbor-api/:{{ container_config_directory }}/:ro"
       - "/etc/localtime:/etc/localtime:ro"
       - "kolla_logs:/var/log/kolla/"
+    dimensions: "{{ karbor_api_dimensions }}"
+    haproxy:
+      karbor_api:
+        enabled: "{{ enable_karbor }}"
+        mode: "http"
+        external: false
+        port: "{{ karbor_api_port }}"
+      karbor_api_external:
+        enabled: "{{ enable_karbor }}"
+        mode: "http"
+        external: true
+        port: "{{ karbor_api_port }}"
   karbor-protection:
     container_name: karbor_protection
     group: karbor-protection
@@ -20,6 +32,7 @@ karbor_services:
       - "{{ node_config_directory }}/karbor-protection/:{{ container_config_directory }}/:ro"
       - "/etc/localtime:/etc/localtime:ro"
       - "kolla_logs:/var/log/kolla/"
+    dimensions: "{{ karbor_protection_dimensions }}"
   karbor-operationengine:
     container_name: karbor_operationengine
     group: karbor-operationengine
@@ -29,14 +42,15 @@ karbor_services:
       - "{{ node_config_directory }}/karbor-operationengine/:{{ container_config_directory }}/:ro"
       - "/etc/localtime:/etc/localtime:ro"
       - "kolla_logs:/var/log/kolla/"
+    dimensions: "{{ karbor_operationengine_dimensions }}"
 
 
 ####################
 # Database
 ####################
 karbor_database_name: "karbor"
-karbor_database_user: "karbor"
-karbor_database_address: "{{ kolla_internal_fqdn }}:{{ database_port }}"
+karbor_database_user: "{% if use_preconfigured_databases | bool and use_common_mariadb_user | bool %}{{ database_user }}{% else %}karbor{% endif %}"
+karbor_database_address: "{{ database_address }}:{{ database_port }}"
 
 
 ####################
@@ -57,16 +71,20 @@ karbor_api_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ dock
 karbor_api_tag: "{{ karbor_tag }}"
 karbor_api_image_full: "{{ karbor_api_image }}:{{ karbor_api_tag }}"
 
+karbor_api_dimensions: "{{ default_container_dimensions }}"
+karbor_protection_dimensions: "{{ default_container_dimensions }}"
+karbor_operationengine_dimensions: "{{ default_container_dimensions }}"
+
 
 ####################
 # OpenStack
 ####################
-karbor_admin_endpoint: "{{ admin_protocol }}://{{ kolla_internal_fqdn }}:{{ karbor_api_port }}/v1/%(tenant_id)s"
-karbor_internal_endpoint: "{{ internal_protocol }}://{{ kolla_internal_fqdn }}:{{ karbor_api_port }}/v1/%(tenant_id)s"
-karbor_public_endpoint: "{{ public_protocol }}://{{ kolla_external_fqdn }}:{{ karbor_api_port }}/v1/%(tenant_id)s"
+karbor_admin_endpoint: "{{ admin_protocol }}://{{ kolla_internal_fqdn }}:{{ karbor_api_port }}/v1/%(project_id)s"
+karbor_internal_endpoint: "{{ internal_protocol }}://{{ kolla_internal_fqdn }}:{{ karbor_api_port }}/v1/%(project_id)s"
+karbor_public_endpoint: "{{ public_protocol }}://{{ kolla_external_fqdn }}:{{ karbor_api_port }}/v1/%(project_id)s"
 
 karbor_logging_debug: "{{ openstack_logging_debug }}"
 
 karbor_keystone_user: "karbor"
 
-openstack_karbor_auth: "{{ openstack_auth }}" 
+openstack_karbor_auth: "{{ openstack_auth }}"

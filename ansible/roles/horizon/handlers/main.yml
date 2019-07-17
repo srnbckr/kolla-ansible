@@ -3,6 +3,7 @@
   vars:
     service_name: "horizon"
     service: "{{ horizon_services[service_name] }}"
+  become: true
   kolla_docker:
     action: "recreate_or_restart_container"
     common_options: "{{ docker_common_options }}"
@@ -10,12 +11,6 @@
     image: "{{ service.image }}"
     environment: "{{ service.environment }}"
     volumes: "{{ service.volumes }}"
+    dimensions: "{{ service.dimensions }}"
   when:
-    - action != "config"
-    - inventory_hostname in groups[service.group]
-    - service.enabled | bool
-    - horizon_config_json | changed
-      or horizon_conf | changed
-      or horizon_local_settings | changed
-      or policy_jsons | changed
-      or check_horizon_container | changed
+    - kolla_action != "config"

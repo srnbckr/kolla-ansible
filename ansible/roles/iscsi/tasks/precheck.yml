@@ -1,5 +1,6 @@
 ---
 - name: Get container facts
+  become: true
   kolla_container_facts:
     name:
       - iscsid
@@ -14,4 +15,5 @@
     state: stopped
   when:
     - container_facts['iscsid'] is not defined
-    - inventory_hostname in groups['iscsid']
+    - inventory_hostname in groups[iscsi_services.iscsid.group]
+    - iscsi_services.iscsid.enabled | bool

@@ -3,15 +3,38 @@
   file:
     path: "{{ node_config_directory }}/{{ item.key }}"
     state: "directory"
-    recurse: yes
-  when: inventory_hostname in groups[item.value.group]
+    owner: "{{ config_owner_user }}"
+    group: "{{ config_owner_group }}"
+    mode: "0770"
+  become: true
+  when:
+    - inventory_hostname in groups[item.value.group]
+    - item.value.enabled | bool
   with_dict: "{{ mistral_services }}"
+
+- name: Check if policies shall be overwritten
+  local_action: stat path="{{ item }}"
+  run_once: True
+  register: mistral_policy
+  with_first_found:
+    - files: "{{ supported_policy_format_list }}"
+      paths:
+        - "{{ node_custom_config }}/mistral/"
+      skip: true
+
+- name: Set mistral policy file
+  set_fact:
+    mistral_policy_file: "{{ mistral_policy.results.0.stat.path | basename }}"
+    mistral_policy_file_path: "{{ mistral_policy.results.0.stat.path }}"
+  when:
+    - mistral_policy.results
 
 - name: Copying over config.json files for services
   template:
     src: "{{ item.key }}.json.j2"
     dest: "{{ node_config_directory }}/{{ item.key }}/config.json"
-  register: mistral_config_jsons
+    mode: "0660"
+  become: true
   when:
     - item.value.enabled | bool
     - inventory_hostname in groups[item.value.group]
@@ -26,13 +49,12 @@
     sources:
       - "{{ role_path }}/templates/mistral.conf.j2"
       - "{{ node_custom_config }}/global.conf"
-      - "{{ node_custom_config }}/database.conf"
-      - "{{ node_custom_config }}/messaging.conf"
       - "{{ node_custom_config }}/mistral.conf"
       - "{{ node_custom_config }}/mistral/{{ item.key }}.conf"
       - "{{ node_custom_config }}/mistral/{{ inventory_hostname }}/mistral.conf"
     dest: "{{ node_config_directory }}/{{ item.key }}/mistral.conf"
-  register: mistral_confs
+    mode: "0660"
+  become: true
   when:
     - item.value.enabled | bool
     - inventory_hostname in groups[item.value.group]
@@ -40,34 +62,49 @@
   notify:
     - Restart {{ item.key }} container
 
-- name: Check if policies shall be overwritten
-  local_action: stat path="{{ node_custom_config }}/mistral/policy.json"
-  run_once: True
-  register: mistral_policy
-
-- name: Copying over existing policy.json
+- name: Copying over existing policy file
   template:
-    src: "{{ node_custom_config }}/mistral/policy.json"
-    dest: "{{ node_config_directory }}/{{ item.key }}/policy.json"
-  register: mistral_policy_jsons
+    src: "{{ mistral_policy_file_path }}"
+    dest: "{{ node_config_directory }}/{{ item.key }}/{{ mistral_policy_file }}"
+    mode: "0660"
+  become: true
   when:
-    - mistral_policy.stat.exists
+    - mistral_policy_file is defined
     - inventory_hostname in groups[item.value.group]
     - item.value.enabled | bool
   with_dict: "{{ mistral_services }}"
   notify:
     - Restart {{ item.key }} container
+
+- name: Copying over event_definitions.yaml
+  become: true
+  vars:
+    service: "{{ mistral_services['mistral-event-engine'] }}"
+  template:
+    src: "{{ item }}"
+    dest: "{{ node_config_directory }}/mistral-event-engine/event_definitions.yaml"
+    mode: "0660"
+  when:
+    - inventory_hostname in groups[service.group]
+    - service.enabled | bool
+  with_first_found:
+    - "{{ node_custom_config }}/mistral/{{ inventory_hostname }}/event_definitions.yaml"
+    - "{{ node_custom_config }}/mistral/event_definitions.yaml"
+    - "{{ role_path }}/templates/event_definitions.yaml.j2"
+  notify:
+    - "Restart mistral-event-engine container"
 
 - name: Check mistral containers
+  become: true
   kolla_docker:
     action: "compare_container"
     common_options: "{{ docker_common_options }}"
     name: "{{ item.value.container_name }}"
     image: "{{ item.value.image }}"
-    volumes: "{{ item.value.volumes }}"
-  register: check_mistral_containers
+    volumes: "{{ item.value.volumes|reject('equalto', '')|list }}"
+    dimensions: "{{ item.value.dimensions }}"
   when:
-    - action != "config"
+    - kolla_action != "config"
     - inventory_hostname in groups[item.value.group]
     - item.value.enabled | bool
   with_dict: "{{ mistral_services }}"

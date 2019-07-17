@@ -1,13 +1,15 @@
 ---
-- include: config.yml
+# TODO(mgoddard): Remove this in U cycle once all old containers have been
+# stopped.
+- name: Stopping old neutron-lbaas-agent containers
+  become: true
+  kolla_docker:
+    action: "stop_and_remove_container"
+    common_options: "{{ docker_common_options }}"
+    name: "neutron_lbaas_agent"
 
-- include: config-neutron-fake.yml
-  when:
-    - inventory_hostname in groups['compute']
-    - enable_nova_fake | bool
+- include_tasks: rolling_upgrade.yml
+  when: neutron_enable_rolling_upgrade | bool
 
-- include: bootstrap_service.yml
-  when: inventory_hostname in groups['neutron-server']
-
-- name: Flush Handlers
-  meta: flush_handlers
+- include_tasks: legacy_upgrade.yml
+  when: not neutron_enable_rolling_upgrade | bool

@@ -2,69 +2,35 @@
 project_name: "ceilometer"
 
 ceilometer_services:
-  ceilometer-api:
-    container_name: ceilometer_api
-    group: ceilometer-api
-    enabled: True
-    image: "{{ ceilometer_api_image_full }}"
-    volumes:
-      - "{{ node_config_directory }}/ceilometer-api/:{{ container_config_directory }}/:ro"
-      - "/etc/localtime:/etc/localtime:ro"
-      - "ceilometer:/var/lib/ceilometer/"
-      - "kolla_logs:/var/log/kolla/"
   ceilometer-notification:
     container_name: ceilometer_notification
     group: ceilometer-notification
     enabled: True
     image: "{{ ceilometer_notification_image_full }}"
-    volumes:
-      - "{{ node_config_directory }}/ceilometer-notification/:{{ container_config_directory }}/:ro"
-      - "/etc/localtime:/etc/localtime:ro"
-      - "kolla_logs:/var/log/kolla/"
+    volumes: "{{ ceilometer_notification_default_volumes + ceilometer_notification_extra_volumes }}"
+    dimensions: "{{ ceilometer_notification_dimensions }}"
   ceilometer-central:
     container_name: ceilometer_central
     group: ceilometer-central
     enabled: True
     image: "{{ ceilometer_central_image_full }}"
-    volumes:
-      - "{{ node_config_directory }}/ceilometer-central/:{{ container_config_directory }}/:ro"
-      - "/etc/localtime:/etc/localtime:ro"
-      - "ceilometer:/var/lib/ceilometer/"
-      - "kolla_logs:/var/log/kolla/"
-  ceilometer-collector:
-    container_name: ceilometer_collector
-    group: ceilometer-collector
-    enabled: True
-    image: "{{ ceilometer_collector_image_full }}"
-    volumes:
-      - "{{ node_config_directory }}/ceilometer-collector/:{{ container_config_directory }}/:ro"
-      - "/etc/localtime:/etc/localtime:ro"
-      - "ceilometer:/var/lib/ceilometer/"
-      - "kolla_logs:/var/log/kolla/"
+    volumes: "{{ ceilometer_central_default_volumes + ceilometer_central_extra_volumes }}"
+    dimensions: "{{ ceilometer_central_dimensions }}"
   ceilometer-compute:
     container_name: ceilometer_compute
     group: ceilometer-compute
     enabled: True
     privileged: True
     image: "{{ ceilometer_compute_image_full }}"
-    volumes:
-      - "{{ node_config_directory }}/ceilometer-compute/:{{ container_config_directory }}/:ro"
-      - "/etc/localtime:/etc/localtime:ro"
-      - "/run/:/run/:shared"
-      - "ceilometer:/var/lib/ceilometer/"
-      - "kolla_logs:/var/log/kolla/"
-      - "nova_libvirt:/var/lib/libvirt"
-
-
-####################
-# Database
-####################
-ceilometer_database_name: "ceilometer"
-ceilometer_database_user: "ceilometer"
-ceilometer_database_port: "{{ mongodb_port if ceilometer_database_type == 'mongodb' else database_port }}"
-
-ceilometer_database_mongodb_address: "{% for host in groups['mongodb'] %}{{ hostvars[host]['ansible_' + hostvars[host]['api_interface']]['ipv4']['address'] }}:{{ ceilometer_database_port }}{% if not loop.last %},{% endif %}{% endfor %}"
-ceilometer_database_mysql_address: "{{ kolla_internal_fqdn }}"
+    volumes: "{{ ceilometer_compute_default_volumes + ceilometer_compute_extra_volumes }}"
+    dimensions: "{{ ceilometer_compute_dimensions }}"
+  ceilometer-ipmi:
+    container_name: ceilometer_ipmi
+    group: ceilometer-ipmi
+    enabled: "{{ enable_ceilometer_ipmi }}"
+    image: "{{ ceilometer_ipmi_image_full }}"
+    volumes: "{{ ceilometer_ipmi_default_volumes + ceilometer_ipmi_extra_volumes }}"
+    dimensions: "{{ ceilometer_ipmi_dimensions }}"
 
 
 ####################
@@ -77,32 +43,71 @@ ceilometer_notification_image: "{{ docker_registry ~ '/' if docker_registry else
 ceilometer_notification_tag: "{{ ceilometer_tag }}"
 ceilometer_notification_image_full: "{{ ceilometer_notification_image }}:{{ ceilometer_notification_tag }}"
 
-ceilometer_api_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/{{ kolla_base_distro }}-{{ ceilometer_install_type }}-ceilometer-api"
-ceilometer_api_tag: "{{ ceilometer_tag }}"
-ceilometer_api_image_full: "{{ ceilometer_api_image }}:{{ ceilometer_api_tag }}"
-
 ceilometer_central_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/{{ kolla_base_distro }}-{{ ceilometer_install_type }}-ceilometer-central"
 ceilometer_central_tag: "{{ ceilometer_tag }}"
 ceilometer_central_image_full: "{{ ceilometer_central_image }}:{{ ceilometer_central_tag }}"
-
-ceilometer_collector_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/{{ kolla_base_distro }}-{{ ceilometer_install_type }}-ceilometer-collector"
-ceilometer_collector_tag: "{{ ceilometer_tag }}"
-ceilometer_collector_image_full: "{{ ceilometer_collector_image }}:{{ ceilometer_collector_tag }}"
 
 ceilometer_compute_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/{{ kolla_base_distro }}-{{ ceilometer_install_type }}-ceilometer-compute"
 ceilometer_compute_tag: "{{ ceilometer_tag }}"
 ceilometer_compute_image_full: "{{ ceilometer_compute_image }}:{{ ceilometer_compute_tag }}"
 
+ceilometer_ipmi_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/{{ kolla_base_distro }}-{{ ceilometer_install_type }}-ceilometer-ipmi"
+ceilometer_ipmi_tag: "{{ ceilometer_tag }}"
+ceilometer_ipmi_image_full: "{{ ceilometer_ipmi_image }}:{{ ceilometer_ipmi_tag }}"
+
+ceilometer_notification_dimensions: "{{ default_container_dimensions }}"
+ceilometer_central_dimensions: "{{ default_container_dimensions }}"
+ceilometer_compute_dimensions: "{{ default_container_dimensions }}"
+ceilometer_ipmi_dimensions: "{{ default_container_dimensions }}"
+
+ceilometer_notification_default_volumes:
+  - "{{ node_config_directory }}/ceilometer-notification/:{{ container_config_directory }}/:ro"
+  - "/etc/localtime:/etc/localtime:ro"
+  - "kolla_logs:/var/log/kolla/"
+  - "{{ kolla_dev_repos_directory ~ '/ceilometer/ceilometer:/var/lib/kolla/venv/lib/python2.7/site-packages/ceilometer' if ceilometer_dev_mode | bool else '' }}"
+ceilometer_central_default_volumes:
+  - "{{ node_config_directory }}/ceilometer-central/:{{ container_config_directory }}/:ro"
+  - "/etc/localtime:/etc/localtime:ro"
+  - "ceilometer:/var/lib/ceilometer/"
+  - "kolla_logs:/var/log/kolla/"
+  - "{{ kolla_dev_repos_directory ~ '/ceilometer/ceilometer:/var/lib/kolla/venv/lib/python2.7/site-packages/ceilometer' if ceilometer_dev_mode | bool else '' }}"
+ceilometer_compute_default_volumes:
+  - "{{ node_config_directory }}/ceilometer-compute/:{{ container_config_directory }}/:ro"
+  - "/etc/localtime:/etc/localtime:ro"
+  - "/run/:/run/:shared"
+  - "ceilometer:/var/lib/ceilometer/"
+  - "kolla_logs:/var/log/kolla/"
+  - "nova_libvirt:/var/lib/libvirt"
+  - "{{ kolla_dev_repos_directory ~ '/ceilometer/ceilometer:/var/lib/kolla/venv/lib/python2.7/site-packages/ceilometer' if ceilometer_dev_mode | bool else '' }}"
+ceilometer_ipmi_default_volumes:
+  - "{{ node_config_directory }}/ceilometer-ipmi/:{{ container_config_directory }}/:ro"
+  - "/etc/localtime:/etc/localtime:ro"
+  - "ceilometer:/var/lib/ceilometer/"
+  - "kolla_logs:/var/log/kolla/"
+  - "{{ kolla_dev_repos_directory ~ '/ceilometer/ceilometer:/var/lib/kolla/venv/lib/python2.7/site-packages/ceilometer' if ceilometer_dev_mode | bool else '' }}"
+
+ceilometer_extra_volumes: "{{ default_extra_volumes }}"
+ceilometer_notification_extra_volumes: "{{ ceilometer_extra_volumes }}"
+ceilometer_central_extra_volumes: "{{ ceilometer_extra_volumes }}"
+ceilometer_compute_extra_volumes: "{{ ceilometer_extra_volumes }}"
+ceilometer_ipmi_extra_volumes: "{{ ceilometer_extra_volumes }}"
 
 ####################
 # OpenStack
 ####################
-ceilometer_admin_endpoint: "{{ admin_protocol }}://{{ kolla_internal_fqdn }}:{{ ceilometer_api_port }}"
-ceilometer_internal_endpoint: "{{ internal_protocol }}://{{ kolla_internal_fqdn }}:{{ ceilometer_api_port }}"
-ceilometer_public_endpoint: "{{ public_protocol }}://{{ kolla_external_fqdn }}:{{ ceilometer_api_port }}"
-
 ceilometer_logging_debug: "{{ openstack_logging_debug }}"
 
 ceilometer_keystone_user: "ceilometer"
 
 openstack_ceilometer_auth: "{{ openstack_auth }}"
+
+
+####################
+# Kolla
+####################
+ceilometer_git_repository: "{{ kolla_dev_repos_git }}/ceilometer"
+ceilometer_dev_repos_pull: "{{ kolla_dev_repos_pull }}"
+ceilometer_dev_mode: "{{ kolla_dev_mode }}"
+ceilometer_source_version: "{{ kolla_source_version }}"
+
+ceilometer_custom_meters_local_folder: "meters.d"

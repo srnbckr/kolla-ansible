@@ -1,5 +1,6 @@
 ---
 - name: Fetching Ceph keyrings
+  become: true
   command: docker exec ceph_mon fetch_ceph_keys.py
   register: ceph_files_json
   changed_when: (ceph_files_json.stdout | from_json).changed
@@ -12,21 +13,23 @@
     ceph_files: "{{ (ceph_files_json.stdout | from_json) }}"
 
 - name: Pushing Ceph keyring for OSDs
+  become: true
   bslurp:
     src: "{{ item.content }}"
     dest: "{{ node_config_directory }}/ceph-osd/{{ item.filename }}"
-    mode: 0600
     sha1: "{{ item.sha1 }}"
+    mode: 0600
   with_items:
     - "{{ ceph_files['ceph.client.admin.keyring'] }}"
   when: inventory_hostname in groups['ceph-osd']
 
 - name: Pushing Ceph keyrings for Mons
+  become: true
   bslurp:
     src: "{{ item.content }}"
     dest: "{{ node_config_directory }}/ceph-mon/{{ item.filename }}"
-    mode: 0600
     sha1: "{{ item.sha1 }}"
+    mode: 0600
   with_items:
     - "{{ ceph_files['ceph.client.admin.keyring'] }}"
     - "{{ ceph_files['ceph.client.mon.keyring'] }}"
@@ -34,13 +37,38 @@
     - "{{ ceph_files['ceph.monmap'] }}"
   when: inventory_hostname in groups['ceph-mon']
 
+- name: Pushing Ceph keyrings for Mgrs
+  become: true
+  bslurp:
+    src: "{{ item.content }}"
+    dest: "{{ node_config_directory }}/ceph-mgr/{{ item.filename }}"
+    sha1: "{{ item.sha1 }}"
+    mode: 0600
+  with_items:
+    - "{{ ceph_files['ceph.client.admin.keyring'] }}"
+  when: inventory_hostname in groups['ceph-mgr']
+
 - name: Pushing Ceph keyrings for RGWs
+  become: true
   bslurp:
     src: "{{ item.content }}"
     dest: "{{ node_config_directory }}/ceph-rgw/{{ item.filename }}"
-    mode: 0600
     sha1: "{{ item.sha1 }}"
+    mode: 0600
   with_items:
     - "{{ ceph_files['ceph.client.admin.keyring'] }}"
     - "{{ ceph_files['ceph.client.radosgw.keyring'] }}"
   when: inventory_hostname in groups['ceph-rgw']
+
+- name: Pushing Ceph keyrings for NFSs
+  become: true
+  bslurp:
+    src: "{{ item.content }}"
+    dest: "{{ node_config_directory }}/ceph-nfs/{{ item.filename }}"
+    sha1: "{{ item.sha1 }}"
+    mode: 0600
+  with_items:
+    - "{{ ceph_files['ceph.client.admin.keyring'] }}"
+  when:
+    - inventory_hostname in groups['ceph-nfs']
+    - enable_ceph_nfs | bool

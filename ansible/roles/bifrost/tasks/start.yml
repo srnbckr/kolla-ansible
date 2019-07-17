@@ -1,5 +1,6 @@
 ---
 - name: Starting bifrost deploy container
+  become: true
   kolla_docker:
     action: "start_container"
     common_options: "{{ docker_common_options }}"
@@ -10,3 +11,8 @@
       - "{{ node_config_directory }}/bifrost/:/etc/bifrost:ro"
       - "/etc/localtime:/etc/localtime:ro"
       - "/dev:/dev"
+      - "kolla_logs:/var/log/kolla/"
+      - "bifrost_httpboot:/httpboot/"
+      - "bifrost_ironic:/var/lib/ironic/"
+      - "bifrost_mariadb:/var/lib/mysql/"
+      - "bifrost_tftpboot:/tftpboot/"

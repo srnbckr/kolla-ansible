@@ -2,21 +2,29 @@
 
 auth:
   type: keystone
+  analyzer_username: {{ openstack_auth['username'] }}
+  analyzer_password: {{ openstack_auth['password'] }}
+
+  keystone:
+    auth_url: {{ keystone_internal_url }}/v3
+    region_name: {{ openstack_region_name }}
+    domain_name: Default
 
 logging:
-  default: DEBUG
-  topology/probes: INFO
-  topology/graph: INFO
+  level: INFO
+  backends:
+    - file
+  file:
+    path: /var/log/kolla/skydive/skydive-analyzer.log
 
-openstack:
-  auth_url: {{ keystone_public_url }}/v3
-  tenant_name: {{ openstack_auth['project_name'] }}
-  region_name: {{ openstack_region_name }}
-  domain_name: Default
+analyzers:
+{% for host in groups['skydive-analyzer'] %}
+  - {{ hostvars[host]['ansible_' + hostvars[host]['api_interface']]['ipv4']['address'] }}:{{ skydive_analyzer_port }}
+{% endfor %}
 
 etcd:
   client_timeout: 100
-{% if enable_etcd == "yes" %}
+{% if enable_etcd | bool %}
   embedded: false
   servers:
 {% for host in groups['etcd'] %}
@@ -33,9 +41,6 @@ etcd:
 
 analyzer:
   listen: {{ api_interface_address }}:{{ skydive_analyzer_port }}
-  flowtable_expire: 60
-  flowtable_update: 5
-  flowtable_agent_ratio: 0.5
   storage:
     backend: elasticsearch
 {% if groups['skydive-agent'] | length > 1 %}
@@ -58,3 +63,7 @@ storage:
 
 graph:
   backend: elasticsearch
+
+flow:
+  expire: 600
+  update: 60

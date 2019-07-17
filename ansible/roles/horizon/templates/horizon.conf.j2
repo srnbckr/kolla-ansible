@@ -1,22 +1,28 @@
-{% set python_path = '/usr/share/openstack-dashboard' if kolla_install_type == 'binary' else '/var/lib/kolla/venv/lib/python2.7/site-packages' %}
-Listen {{ api_interface_address }}:{{ horizon_port }}
+{% set python_path = '/usr/share/openstack-dashboard' if horizon_install_type == 'binary' else '/var/lib/kolla/venv/lib/python2.7/site-packages' %}
+Listen {{ api_interface_address }}:{{ horizon_listen_port }}
 
-<VirtualHost *:{{ horizon_port }}>
+ServerSignature Off
+ServerTokens Prod
+TraceEnable off
+
+<VirtualHost *:{{ horizon_listen_port }}>
     LogLevel warn
     ErrorLog /var/log/kolla/horizon/horizon.log
-    CustomLog /var/log/kolla/horizon/horizon-access.log combined
+    LogFormat "%{X-Forwarded-For}i %l %u %t \"%r\" %>s %b %D \"%{Referer}i\" \"%{User-Agent}i\"" logformat
+    CustomLog /var/log/kolla/horizon/horizon-access.log logformat
 
     WSGIScriptReloading On
-    WSGIDaemonProcess horizon-http processes={{ openstack_service_workers }} threads=1 user=horizon group=horizon display-name=%{GROUP} python-path={{ python_path }}
+    WSGIDaemonProcess horizon-http processes={{ horizon_wsgi_processes }} threads={{ horizon_wsgi_threads }} user=horizon group=horizon display-name=%{GROUP} python-path={{ python_path }}
     WSGIProcessGroup horizon-http
     WSGIScriptAlias / {{ python_path }}/openstack_dashboard/wsgi/django.wsgi
     WSGIPassAuthorization On
+    WSGIApplicationGroup %{GLOBAL}
 
     <Location "/">
         Require all granted
     </Location>
 
-{% if kolla_base_distro == 'ubuntu' and kolla_install_type == 'binary' %}
+{% if kolla_base_distro == 'ubuntu' and horizon_install_type == 'binary' %}
     Alias /static /var/lib/openstack-dashboard/static
 {% else %}
     Alias /static {{ python_path }}/static
@@ -28,13 +34,12 @@ Listen {{ api_interface_address }}:{{ horizon_port }}
 
 {% if kolla_enable_tls_external | bool %}
 Header edit Location ^http://(.*)$ https://$1
-{% else %}
-# NOTE(Jeffrey4l): Only enable deflate when tls is disabled until the
-# OSSN-0037 is fixed.
-# see https://wiki.openstack.org/wiki/OSSN/OSSN-0037 for more information.
+{% endif %}
+
 <IfModule mod_deflate.c>
-    # Compress HTML, CSS, JavaScript, Text, XML and fonts
+    # Compress HTML, CSS, JavaScript, Json, Text, XML and fonts
     AddOutputFilterByType DEFLATE application/javascript
+    AddOutputFilterByType DEFLATE application/json
     AddOutputFilterByType DEFLATE application/rss+xml
     AddOutputFilterByType DEFLATE application/vnd.ms-fontobject
     AddOutputFilterByType DEFLATE application/x-font
@@ -56,7 +61,6 @@ Header edit Location ^http://(.*)$ https://$1
     AddOutputFilterByType DEFLATE text/plain
     AddOutputFilterByType DEFLATE text/xml
 </IfModule>
-{% endif %}
 
 <IfModule mod_expires.c>
     <Filesmatch "\.(jpg|jpeg|png|gif|js|css|swf|ico|woff)$">

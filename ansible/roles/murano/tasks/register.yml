@@ -1,5 +1,6 @@
 ---
 - name: Creating the Murano service and endpoint
+  become: true
   kolla_toolbox:
     module_name: "kolla_keystone_service"
     module_args:
@@ -10,9 +11,8 @@
       url: "{{ item.url }}"
       interface: "{{ item.interface }}"
       region_name: "{{ openstack_region_name }}"
-      auth: "{{ '{{ openstack_murano_auth }}' }}"
-    module_extra_vars:
-      openstack_murano_auth: "{{ openstack_murano_auth }}"
+      auth: "{{ openstack_murano_auth }}"
+      endpoint_type: "{{ openstack_interface }}"
   run_once: True
   with_items:
     - {'interface': 'admin', 'url': '{{ murano_admin_endpoint }}'}
@@ -20,6 +20,7 @@
     - {'interface': 'public', 'url': '{{ murano_public_endpoint }}'}
 
 - name: Creating the Murano project, user, and role
+  become: true
   kolla_toolbox:
     module_name: "kolla_keystone_user"
     module_args:
@@ -28,7 +29,6 @@
       password: "{{ murano_keystone_password }}"
       role: "admin"
       region_name: "{{ openstack_region_name }}"
-      auth: "{{ '{{ openstack_murano_auth }}' }}"
-    module_extra_vars:
-      openstack_murano_auth: "{{ openstack_murano_auth }}"
+      auth: "{{ openstack_murano_auth }}"
+      endpoint_type: "{{ openstack_interface }}"
   run_once: True

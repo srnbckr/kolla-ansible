@@ -1,5 +1,6 @@
 ---
 - name: Ensuring the containers up
+  become: true
   kolla_docker:
     name: "{{ item.name }}"
     action: "get_container_state"
@@ -9,9 +10,10 @@
   with_items:
     - { name: bifrost-deploy, group: bifrost-deploy }
 
-- include: config.yml
+- include_tasks: config.yml
 
 - name: Check the configs
+  become: true
   command: docker exec {{ item.name }} /usr/local/bin/kolla_set_configs --check
   changed_when: false
   failed_when: false
@@ -24,6 +26,7 @@
 # and container env['KOLLA_CONFIG_STRATEGY'] == 'COPY_ONCE',
 # just remove the container and start again
 - name: Containers config strategy
+  become: true
   kolla_docker:
     name: "{{ item.name }}"
     action: "get_container_env"
@@ -33,6 +36,7 @@
     - { name: bifrost-deploy, group: bifrost-deploy }
 
 - name: Remove the containers
+  become: true
   kolla_docker:
     name: "{{ item[0]['name'] }}"
     action: "remove_container"
@@ -46,10 +50,11 @@
     - "{{ container_envs.results }}"
     - "{{ check_results.results }}"
 
-- include: start.yml
+- include_tasks: start.yml
   when: remove_containers.changed
 
 - name: Restart containers
+  become: true
   kolla_docker:
     name: "{{ item[0]['name'] }}"
     action: "restart_container"

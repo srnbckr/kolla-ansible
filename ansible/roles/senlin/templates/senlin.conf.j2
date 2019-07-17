@@ -7,17 +7,17 @@ log_dir = /var/log/kolla/senlin
 num_engine_workers = {{ openstack_service_workers }}
 {% endif %}
 
-transport_url = rabbit://{% for host in groups['rabbitmq'] %}{{ rabbitmq_user }}:{{ rabbitmq_password }}@{{ hostvars[host]['ansible_' + hostvars[host]['api_interface']]['ipv4']['address'] }}:{{ rabbitmq_port }}{% if not loop.last %},{% endif %}{% endfor %}
+transport_url = {{ rpc_transport_url }}
 
 {% if service_name == 'senlin-api' %}
 [senlin_api]
 bind_host = {{ api_interface_address }}
-bind_port = {{ senlin_api_port }}
+bind_port = {{ senlin_api_listen_port }}
 workers = {{ openstack_service_workers }}
 {% endif %}
 
 [authentication]
-auth_url = {{ admin_protocol }}://{{ kolla_internal_fqdn }}:{{ keystone_admin_port }}
+auth_url = {{ keystone_admin_url }}
 service_username = {{ senlin_keystone_user }}
 service_password = {{ senlin_keystone_password }}
 service_project_name = service
@@ -29,8 +29,8 @@ connection = mysql+pymysql://{{ senlin_database_user }}:{{ senlin_database_passw
 max_retries = -1
 
 [keystone_authtoken]
-auth_uri = {{ internal_protocol }}://{{ kolla_internal_fqdn }}:{{ keystone_public_port }}
-auth_url = {{ admin_protocol }}://{{ kolla_internal_fqdn }}:{{ keystone_admin_port }}
+www_authenticate_uri = {{ keystone_internal_url }}
+auth_url = {{ keystone_admin_url }}
 auth_type = password
 project_domain_id = {{ default_project_domain_id }}
 user_domain_id = {{ default_user_domain_id }}
@@ -44,11 +44,17 @@ memcache_secret_key = {{ memcache_secret_key }}
 memcached_servers = {% for host in groups['memcached'] %}{{ hostvars[host]['ansible_' + hostvars[host]['api_interface']]['ipv4']['address'] }}:{{ memcached_port }}{% if not loop.last %},{% endif %}{% endfor %}
 
 [oslo_messaging_notifications]
+transport_url = {{ notify_transport_url }}
 {% if enable_ceilometer | bool %}
 driver = messagingv2
-topics = 'notifications'
+topics = notifications
 {% else %}
 driver = noop
+{% endif %}
+
+{% if senlin_policy_file is defined %}
+[oslo_policy]
+policy_file = {{ senlin_policy_file }}
 {% endif %}
 
 {% if enable_osprofiler | bool %}
@@ -56,7 +62,5 @@ driver = noop
 enabled = true
 trace_sqlalchemy = true
 hmac_keys = {{ osprofiler_secret }}
-{% if enable_elasticsearch | bool %}
-connection_string = elasticsearch://{{ elasticsearch_address }}:{{ elasticsearch_port }}
-{% endif %}
+connection_string = {{ osprofiler_backend_connection_string }}
 {% endif %}

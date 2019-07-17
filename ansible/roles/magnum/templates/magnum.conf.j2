@@ -5,7 +5,7 @@ log_dir = /var/log/kolla/magnum
 
 host = {{ api_interface_address }}
 
-transport_url = rabbit://{% for host in groups['rabbitmq'] %}{{ rabbitmq_user }}:{{ rabbitmq_password }}@{{ hostvars[host]['ansible_' + hostvars[host]['api_interface']]['ipv4']['address'] }}:{{ rabbitmq_port }}{% if not loop.last %},{% endif %}{% endfor %}
+transport_url = {{ rpc_transport_url }}
 
 {% if service_name == 'magnum-api' %}
 [api]
@@ -14,12 +14,14 @@ host = {{ api_interface_address }}
 workers = {{ openstack_service_workers }}
 {% endif %}
 
-[oslo_policy]
-policy_file = /etc/magnum/policy.json
-
 [database]
 connection = mysql+pymysql://{{ magnum_database_user }}:{{ magnum_database_password }}@{{ magnum_database_address }}/{{ magnum_database_name }}
 max_retries = -1
+
+{% if enable_cinder | bool %}
+[cinder]
+default_docker_volume_type = {{ default_docker_volume_type }}
+{% endif %}
 
 [heat_client]
 region_name = {{ openstack_region_name }}
@@ -45,7 +47,7 @@ region_name = {{ openstack_region_name }}
 endpoint_type = internalURL
 
 [keystone_auth]
-auth_url = {{ internal_protocol }}://{{ kolla_internal_fqdn }}:{{ keystone_public_port }}/v3
+auth_url = {{ keystone_internal_url }}/v3
 user_domain_name = {{ default_user_domain_name }}
 project_domain_name = {{ default_project_domain_name }}
 project_name = service
@@ -55,8 +57,8 @@ auth_type = password
 
 [keystone_authtoken]
 auth_version = v3
-auth_uri = {{ internal_protocol }}://{{ kolla_internal_fqdn }}:{{ keystone_public_port }}/v3
-auth_url = {{ admin_protocol }}://{{ kolla_internal_fqdn }}:{{ keystone_admin_port }}
+www_authenticate_uri = {{ keystone_internal_url }}/v3
+auth_url = {{ keystone_admin_url }}
 auth_type = password
 project_domain_name = {{ default_project_domain_name }}
 user_domain_name = {{ default_user_domain_name }}
@@ -72,9 +74,13 @@ memcached_servers = {% for host in groups['memcached'] %}{{ hostvars[host]['ansi
 trustee_domain_admin_password = {{ magnum_keystone_password }}
 trustee_domain_admin_name = {{ magnum_trustee_domain_admin }}
 trustee_domain_name = {{ magnum_trustee_domain }}
+cluster_user_trust = {{ enable_cluster_user_trust }}
 
 [oslo_concurrency]
 lock_path = /var/lib/magnum/tmp
+
+[oslo_middleware]
+enable_proxy_headers_parsing = True
 
 [certificates]
 {% if enable_barbican | bool %}
@@ -84,11 +90,17 @@ cert_manager_type = x509keypair
 {% endif %}
 
 [oslo_messaging_notifications]
+transport_url = {{ notify_transport_url }}
 {% if enable_ceilometer | bool %}
 driver = messaging
-topics = 'notifications'
+topics = notifications
 {% else %}
 driver = noop
+{% endif %}
+
+{% if magnum_policy_file is defined %}
+[oslo_policy]
+policy_file = {{ magnum_policy_file }}
 {% endif %}
 
 {% if enable_osprofiler | bool %}
@@ -96,7 +108,5 @@ driver = noop
 enabled = true
 trace_sqlalchemy = true
 hmac_keys = {{ osprofiler_secret }}
-{% if enable_elasticsearch | bool %}
-connection_string = elasticsearch://{{ elasticsearch_address }}:{{ elasticsearch_port }}
-{% endif %}
+connection_string = {{ osprofiler_backend_connection_string }}
 {% endif %}

@@ -1,37 +1,51 @@
 ---
-- name: Check if policies shall be overwritten
-  local_action: stat path="{{ node_custom_config }}/keystone/policy.json"
-  run_once: True
-  register: keystone_policy
-
-- name: Check if Keystone Domain specific settings enabled
-  local_action: stat path="{{ node_custom_config }}/keystone/domains"
-  run_once: True
-  register: keystone_domain_directory
-
 - name: Ensuring config directories exist
   file:
     path: "{{ node_config_directory }}/{{ item.key }}"
     state: "directory"
-    recurse: yes
+    owner: "{{ config_owner_user }}"
+    group: "{{ config_owner_group }}"
+    mode: "0770"
+  become: true
   when:
     - inventory_hostname in groups[item.value.group]
     - item.value.enabled | bool
   with_dict: "{{ keystone_services }}"
+
+- name: Check if policies shall be overwritten
+  local_action: stat path="{{ item }}"
+  run_once: True
+  register: keystone_policy
+  with_first_found:
+    - files: "{{ supported_policy_format_list }}"
+      paths:
+        - "{{ node_custom_config }}/keystone/"
+      skip: true
+
+- name: Set keystone policy file
+  set_fact:
+    keystone_policy_file: "{{ keystone_policy.results.0.stat.path | basename }}"
+    keystone_policy_file_path: "{{ keystone_policy.results.0.stat.path }}"
+  when:
+    - keystone_policy.results
+
+- name: Check if Keystone domain-specific config is supplied
+  local_action: stat path="{{ node_custom_config }}/keystone/domains"
+  run_once: True
+  register: keystone_domain_directory
 
 - name: Copying over config.json files for services
   template:
     src: "{{ item.key }}.json.j2"
     dest: "{{ node_config_directory }}/{{ item.key }}/config.json"
-  register: keystone_config_jsons
+    mode: "0660"
+  become: true
   with_dict: "{{ keystone_services }}"
   when:
     - inventory_hostname in groups[item.value.group]
     - item.value.enabled | bool
   notify:
-    - Restart keystone container
-    - Restart keystone-ssh container
-    - Restart keystone-fernet container
+    - Restart {{ item.key }} container
 
 - name: Copying over keystone.conf
   vars:
@@ -40,28 +54,28 @@
     sources:
       - "{{ role_path }}/templates/keystone.conf.j2"
       - "{{ node_custom_config }}/global.conf"
-      - "{{ node_custom_config }}/database.conf"
-      - "{{ node_custom_config }}/messaging.conf"
       - "{{ node_custom_config }}/keystone.conf"
       - "{{ node_custom_config }}/keystone/{{ item.key }}.conf"
       - "{{ node_custom_config }}/keystone/{{ inventory_hostname }}/keystone.conf"
     dest: "{{ node_config_directory }}/{{ item.key }}/keystone.conf"
-  register: keystone_confs
+    mode: "0660"
+  become: true
   with_dict: "{{ keystone_services }}"
   when:
     - inventory_hostname in groups[item.value.group]
     - item.key in [ "keystone", "keystone-fernet" ]
     - item.value.enabled | bool
   notify:
-    - Restart keystone container
-    - Restart keystone-fernet container
+    - Restart {{ item.key }} container
 
-- name: Creating Keystone Domain directory
+- name: Create Keystone domain-specific config directory
   vars:
     keystone: "{{ keystone_services.keystone }}"
   file:
     dest: "{{ node_config_directory }}/keystone/domains/"
     state: "directory"
+    mode: "0770"
+  become: true
   when:
     - inventory_hostname in groups[keystone.group]
     - keystone.enabled | bool
@@ -78,6 +92,8 @@
   template:
     src: "{{ item.path }}"
     dest: "{{ node_config_directory }}/keystone/domains/"
+    mode: "0660"
+  become: true
   register: keystone_domains
   when:
     - inventory_hostname in groups[keystone.group]
@@ -87,20 +103,20 @@
   notify:
     - Restart keystone container
 
-- name: Copying over existing policy.json
+- name: Copying over existing policy file
   template:
-    src: "{{ node_custom_config }}/keystone/policy.json"
-    dest: "{{ node_config_directory }}/{{ item.key }}/policy.json"
-  register: keystone_policy_jsons
+    src: "{{ keystone_policy_file_path }}"
+    dest: "{{ node_config_directory }}/{{ item.key }}/{{ keystone_policy_file }}"
+    mode: "0660"
+  become: true
   when:
     - inventory_hostname in groups[item.value.group]
     - item.key in [ "keystone", "keystone-fernet" ]
     - item.value.enabled | bool
-    - keystone_policy.stat.exists
+    - keystone_policy_file is defined
   with_dict: "{{ keystone_services }}"
   notify:
-    - Restart keystone container
-    - Restart keystone-fernet container
+    - Restart {{ item.key }} container
 
 - name: Copying over wsgi-keystone.conf
   vars:
@@ -108,7 +124,8 @@
   template:
     src: "{{ item }}"
     dest: "{{ node_config_directory }}/keystone/wsgi-keystone.conf"
-  register: keystone_wsgi
+    mode: "0660"
+  become: true
   when:
     - inventory_hostname in groups[keystone.group]
     - keystone.enabled | bool
@@ -134,7 +151,8 @@
   template:
     src: "{{ node_custom_config }}/keystone/keystone-paste.ini"
     dest: "{{ node_config_directory }}/keystone/keystone-paste.ini"
-  register: keystone_paste_ini
+    mode: "0660"
+  become: true
   when:
     - inventory_hostname in groups[keystone.group]
     - keystone.enabled | bool
@@ -143,13 +161,20 @@
     - Restart keystone container
 
 - name: Generate the required cron jobs for the node
-  local_action: "command python {{ role_path }}/files/fernet_rotate_cron_generator.py -t {{ (fernet_token_expiry | int) // 60 }} -i {{ groups['keystone'].index(inventory_hostname) }} -n {{ (groups['keystone'] | length) }}"
+  command: >
+    python {{ role_path }}/files/fernet_rotate_cron_generator.py
+    -t {{ (fernet_key_rotation_interval | int) // 60 }}
+    -i {{ groups['keystone'].index(inventory_hostname) }}
+    -n {{ (groups['keystone'] | length) }}
+  changed_when: false
   register: cron_jobs_json
   when: keystone_token_provider == 'fernet'
+  delegate_to: localhost
 
-- name: Save the returned from cron jobs for building the crontab
+- name: Set fact with the generated cron jobs for building the crontab later
   set_fact:
     cron_jobs: "{{ (cron_jobs_json.stdout | from_json).cron_jobs }}"
+  ignore_errors: "{{ ansible_check_mode }}"
   when: keystone_token_provider == 'fernet'
 
 - name: Copying files for keystone-fernet
@@ -158,11 +183,14 @@
   template:
     src: "{{ item.src }}"
     dest: "{{ node_config_directory }}/keystone-fernet/{{ item.dest }}"
-  register: keystone_fernet_confs
+    mode: "0660"
+  become: true
+  ignore_errors: "{{ ansible_check_mode }}"
   with_items:
     - { src: "crontab.j2", dest: "crontab" }
     - { src: "fernet-rotate.sh.j2", dest: "fernet-rotate.sh" }
     - { src: "fernet-node-sync.sh.j2", dest: "fernet-node-sync.sh" }
+    - { src: "fernet-push.sh.j2", dest: "fernet-push.sh" }
     - { src: "id_rsa", dest: "id_rsa" }
     - { src: "ssh_config.j2", dest: "ssh_config" }
   when:
@@ -177,7 +205,8 @@
   template:
     src: "{{ item.src }}"
     dest: "{{ node_config_directory }}/keystone-ssh/{{ item.dest }}"
-  register: keystone_ssh_confs
+    mode: "0660"
+  become: true
   with_items:
     - { src: "sshd_config.j2", dest: "sshd_config" }
     - { src: "id_rsa.pub", dest: "id_rsa.pub" }
@@ -188,18 +217,18 @@
     - Restart keystone-ssh container
 
 - name: Check keystone containers
+  become: true
   kolla_docker:
     action: "compare_container"
+    common_options: "{{ docker_common_options }}"
     name: "{{ item.value.container_name }}"
     image: "{{ item.value.image }}"
     volumes: "{{ item.value.volumes|reject('equalto', '')|list }}"
+    dimensions: "{{ item.value.dimensions }}"
   when:
-    - action != "config"
+    - kolla_action != "config"
     - inventory_hostname in groups[item.value.group]
     - item.value.enabled | bool
-  register: check_keystone_containers
   with_dict: "{{ keystone_services }}"
   notify:
-    - Restart keystone container
-    - Restart keystone-ssh container
-    - Restart keystone-fernet container
+    - Restart {{ item.key }} container

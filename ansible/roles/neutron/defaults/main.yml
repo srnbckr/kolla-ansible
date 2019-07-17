@@ -7,49 +7,32 @@ neutron_services:
     image: "{{ neutron_server_image_full }}"
     enabled: true
     group: "neutron-server"
-    host_in_groups: "{{ True if orchestration_engine == 'KUBERNETES' else inventory_hostname in groups['neutron-server'] }}"
-    volumes:
-      - "{{ node_config_directory }}/neutron-server/:{{ container_config_directory }}/:ro"
-      - "/etc/localtime:/etc/localtime:ro"
-      - "kolla_logs:/var/log/kolla/"
+    host_in_groups: "{{ inventory_hostname in groups['neutron-server'] }}"
+    volumes: "{{ neutron_server_default_volumes + neutron_server_extra_volumes }}"
+    dimensions: "{{ neutron_server_dimensions }}"
+    haproxy:
+      neutron_server:
+        enabled: "{{ enable_neutron }}"
+        mode: "http"
+        external: false
+        port: "{{ neutron_server_port }}"
+        listen_port: "{{ neutron_server_listen_port }}"
+        frontend_http_extra:
+          - "option http-tunnel"
+      neutron_server_external:
+        enabled: "{{ enable_neutron }}"
+        mode: "http"
+        external: true
+        port: "{{ neutron_server_port }}"
+        listen_port: "{{ neutron_server_listen_port }}"
   neutron-openvswitch-agent:
     container_name: "neutron_openvswitch_agent"
     image: "{{ neutron_openvswitch_agent_image_full }}"
-    enabled: "{{ neutron_plugin_agent == 'openvswitch' }}"
+    enabled: "{{ neutron_plugin_agent == 'openvswitch' and not enable_onos | bool }}"
     privileged: True
     host_in_groups: >-
       {{
-      True if orchestration_engine == 'KUBERNETES' else
-      ( inventory_hostname in groups['compute']
-      or (enable_manila | bool and inventory_hostname in groups['manila-share'])
-      or inventory_hostname in groups['neutron-dhcp-agent']
-      or inventory_hostname in groups['neutron-l3-agent']
-      or inventory_hostname in groups['neutron-metadata-agent']
-      or inventory_hostname in groups['neutron-vpnaas-agent']
-      and not enable_nova_fake | bool
-      ) or
-      ( inventory_hostname in groups['neutron-dhcp-agent']
-      or inventory_hostname in groups['neutron-l3-agent']
-      or inventory_hostname in groups['neutron-metadata-agent']
-      or inventory_hostname in groups['neutron-vpnaas-agent']
-      and enable_nova_fake | bool
-      )
-      }}
-    volumes:
-      - "{{ node_config_directory }}/neutron-openvswitch-agent/:{{ container_config_directory }}/:ro"
-      - "/etc/localtime:/etc/localtime:ro"
-      - "/lib/modules:/lib/modules:ro"
-      - "/run:/run:shared"
-      - "kolla_logs:/var/log/kolla/"
-  neutron-sfc-agent:
-    container_name: "neutron_sfc_agent"
-    image: "{{ neutron_sfc_agent_image_full }}"
-    enabled: "{{ neutron_plugin_agent == 'sfc' }}"
-    privileged: True
-    host_in_groups: >-
-      {{
-      True if orchestration_engine == 'KUBERNETES' else
-      ( inventory_hostname in groups['compute']
+      ( (inventory_hostname in groups['compute'] and nova_compute_virt_type != 'xenapi')
       or (enable_manila | bool and inventory_hostname in groups['manila-share'])
       or inventory_hostname in groups['neutron-dhcp-agent']
       or inventory_hostname in groups['neutron-l3-agent']
@@ -62,11 +45,19 @@ neutron_services:
       and enable_nova_fake | bool
       )
       }}
-    volumes:
-      - "{{ node_config_directory }}/neutron-sfc-agent/:{{ container_config_directory }}/:ro"
-      - "/etc/localtime:/etc/localtime:ro"
-      - "/run:/run:shared"
-      - "kolla_logs:/var/log/kolla/"
+    volumes: "{{ neutron_openvswitch_agent_default_volumes + neutron_openvswitch_agent_extra_volumes }}"
+    dimensions: "{{ neutron_openvswitch_agent_dimensions }}"
+  neutron-openvswitch-agent-xenapi:
+    container_name: "neutron_openvswitch_agent_xenapi"
+    image: "{{ neutron_openvswitch_agent_image_full }}"
+    enabled: "{{ neutron_plugin_agent == 'openvswitch' and nova_compute_virt_type == 'xenapi' }}"
+    privileged: True
+    host_in_groups: >-
+      {{
+       inventory_hostname in groups['compute']
+      }}
+    volumes: "{{ neutron_openvswitch_agent_xenapi_default_volumes + neutron_openvswitch_agent_xenapi_extra_volumes }}"
+    dimensions: "{{ neutron_openvswitch_agent_xenapi_dimensions }}"
   neutron-linuxbridge-agent:
     container_name: "neutron_linuxbridge_agent"
     image: "{{  neutron_linuxbridge_agent_image_full }}"
@@ -78,112 +69,98 @@ neutron_services:
       NEUTRON_INTERFACE: "{{ neutron_external_interface }}"
     host_in_groups: >-
       {{
-      True if orchestration_engine == 'KUBERNETES' else
       inventory_hostname in groups['compute']
       or (enable_manila | bool and inventory_hostname in groups['manila-share'])
       or inventory_hostname in groups['neutron-dhcp-agent']
       or inventory_hostname in groups['neutron-l3-agent']
       or inventory_hostname in groups['neutron-metadata-agent']
-      or inventory_hostname in groups['neutron-vpnaas-agent']
       }}
-    volumes:
-      - "{{ node_config_directory }}/neutron-linuxbridge-agent/:{{ container_config_directory }}/:ro"
-      - "/etc/localtime:/etc/localtime:ro"
-      - "/lib/modules:/lib/modules:ro"
-      - "/run:/run:shared"
-      - "kolla_logs:/var/log/kolla/"
+    volumes: "{{ neutron_linuxbridge_agent_default_volumes + neutron_linuxbridge_agent_extra_volumes }}"
+    dimensions: "{{ neutron_linuxbridge_agent_dimensions }}"
   neutron-dhcp-agent:
     container_name: "neutron_dhcp_agent"
     image: "{{ neutron_dhcp_agent_image_full }}"
     privileged: True
-    enabled: "{{ neutron_plugin_agent != 'vmware_nsxv' }}"
+    enabled: "{{ neutron_plugin_agent not in [ 'vmware_nsxv', 'vmware_nsxv3' ] and not enable_onos | bool }}"
     group: "neutron-dhcp-agent"
-    host_in_groups: "{{ True if orchestration_engine == 'KUBERNETES' else inventory_hostname in groups['neutron-dhcp-agent'] }}"
-    volumes:
-      - "{{ node_config_directory }}/neutron-dhcp-agent/:{{ container_config_directory }}/:ro"
-      - "/etc/localtime:/etc/localtime:ro"
-      - "/run/:/run/:shared"
-      - "neutron_metadata_socket:/var/lib/neutron/kolla/"
-      - "kolla_logs:/var/log/kolla/"
+    host_in_groups: "{{ inventory_hostname in groups['neutron-dhcp-agent'] }}"
+    volumes: "{{ neutron_dhcp_agent_default_volumes + neutron_dhcp_agent_extra_volumes }}"
+    dimensions: "{{ neutron_dhcp_agent_dimensions }}"
   neutron-l3-agent:
     container_name: "neutron_l3_agent"
     image: "{{ neutron_l3_agent_image_full }}"
     privileged: True
-    enabled: "{{ not enable_neutron_vpnaas | bool and neutron_plugin_agent != 'vmware_nsxv' }}"
+    enabled: "{{ neutron_plugin_agent not in ['vmware_nsxv', 'vmware_nsxv3', 'vmware_dvs'] and not enable_opendaylight_l3 | bool and not enable_onos | bool }}"
     host_in_groups: >-
       {{
-      True if orchestration_engine == 'KUBERNETES' else
       inventory_hostname in groups['neutron-l3-agent']
       or (inventory_hostname in groups['compute'] and enable_neutron_dvr | bool)
       }}
-    volumes:
-      - "{{ node_config_directory }}/neutron-l3-agent/:{{ container_config_directory }}/:ro"
-      - "/etc/localtime:/etc/localtime:ro"
-      - "/run:/run:shared"
-      - "neutron_metadata_socket:/var/lib/neutron/kolla/"
-      - "kolla_logs:/var/log/kolla/"
-  neutron-lbaas-agent:
-    container_name: "neutron_lbaas_agent"
-    image: "{{ neutron_lbaas_agent_image_full }}"
+    volumes: "{{ neutron_l3_agent_default_volumes + neutron_l3_agent_extra_volumes }}"
+    dimensions: "{{ neutron_l3_agent_dimensions }}"
+  neutron-sriov-agent:
+    container_name: "neutron_sriov_agent"
+    image: "{{ neutron_sriov_agent_image_full }}"
     privileged: True
-    enabled: "{{ enable_neutron_lbaas | bool and neutron_plugin_agent != 'vmware_nsxv' }}"
-    group: "neutron-lbaas-agent"
-    host_in_groups: "{{ True if orchestration_engine == 'KUBERNETES' else inventory_hostname in groups['neutron-lbaas-agent'] }}"
-    volumes:
-      - "{{ node_config_directory }}/neutron-lbaas-agent/:{{ container_config_directory }}/:ro"
-      - "/etc/localtime:/etc/localtime:ro"
-      - "/run:/run:shared"
-      - "kolla_logs:/var/log/kolla/"
+    enabled: "{{ enable_neutron_sriov | bool and neutron_plugin_agent not in ['vmware_nsxv', 'vmware_nsxv3' ] }}"
+    host_in_groups: "{{ inventory_hostname in groups['compute'] }}"
+    volumes: "{{ neutron_sriov_agent_default_volumes + neutron_sriov_agent_extra_volumes }}"
+    dimensions: "{{ neutron_sriov_agent_dimensions }}"
   neutron-metadata-agent:
     container_name: "neutron_metadata_agent"
     image: "{{ neutron_metadata_agent_image_full }}"
     privileged: True
-    enabled: "{{ neutron_plugin_agent != 'vmware_nsxv' }}"
+    enabled: "{{ neutron_plugin_agent not in [ 'vmware_nsxv', 'vmware_nsxv3' ] and not enable_onos | bool }}"
     host_in_groups: >-
       {{
-      True if orchestration_engine == 'KUBERNETES' else
       inventory_hostname in groups['neutron-metadata-agent']
       or (inventory_hostname in groups['compute'] and enable_neutron_dvr | bool)
       }}
-    volumes:
-      - "{{ node_config_directory }}/neutron-metadata-agent/:{{ container_config_directory }}/:ro"
-      - "/etc/localtime:/etc/localtime:ro"
-      - "/run/:/run/:shared"
-      - "neutron_metadata_socket:/var/lib/neutron/kolla/"
-      - "kolla_logs:/var/log/kolla/"
-  neutron-vpnaas-agent:
-    container_name: "neutron_vpnaas_agent"
-    image: "{{ neutron_vpnaas_agent_image_full }}"
-    privileged: True
-    enabled: "{{ enable_neutron_vpnaas | bool and neutron_plugin_agent != 'vmware_nsxv' }}"
-    group: "neutron-vpnaas-agent"
-    host_in_groups: "{{ True if orchestration_engine == 'KUBERNETES' else inventory_hostname in groups['neutron-vpnaas-agent'] }}"
-    volumes:
-      - "{{ node_config_directory }}/neutron-vpnaas-agent/:{{ container_config_directory }}/:ro"
-      - "/etc/localtime:/etc/localtime:ro"
-      - "/run:/run:shared"
-      - "/lib/modules:/lib/modules:ro"
-      - "kolla_logs:/var/log/kolla/"
+    volumes: "{{ neutron_metadata_agent_default_volumes + neutron_metadata_agent_extra_volumes }}"
+    dimensions: "{{ neutron_metadata_agent_dimensions }}"
   neutron-bgp-dragent:
     container_name: "neutron_bgp_dragent"
     image: "{{ neutron_bgp_dragent_image_full }}"
     privileged: True
-    enabled: "{{ enable_neutron_bgp_dragent | bool and neutron_plugin_agent != 'vmware_nsxv' }}"
+    enabled: "{{ enable_neutron_bgp_dragent | bool and neutron_plugin_agent not in ['vmware_nsxv', 'vmware_nsxv3', 'vmware_dvs'] }}"
     group: "neutron-bgp-dragent"
-    host_in_groups: "{{ False if orchestration_engine == 'KUBERNETES' else inventory_hostname in groups['neutron-bgp-dragent'] }}"
-    volumes:
-      - "{{ node_config_directory }}/neutron-bgp-dragent/:{{ container_config_directory }}/:ro"
-      - "/etc/localtime:/etc/localtime:ro"
-      - "/run:/run:shared"
-      - "kolla_logs:/var/log/kolla/"
-
+    host_in_groups: "{{ inventory_hostname in groups['neutron-bgp-dragent'] }}"
+    volumes: "{{ neutron_bgp_dragent_default_volumes + neutron_bgp_dragent_extra_volumes }}"
+    dimensions: "{{ neutron_bgp_dragent_dimensions }}"
+  neutron-infoblox-ipam-agent:
+    container_name: "neutron_infoblox_ipam_agent"
+    image: "{{ neutron_infoblox_ipam_agent_image_full }}"
+    privileged: True
+    enabled: "{{ enable_neutron_infoblox_ipam_agent | bool }}"
+    group: "neutron-infoblox-ipam-agent"
+    host_in_groups: "{{ inventory_hostname in groups['neutron-infoblox-ipam-agent'] }}"
+    volumes: "{{ neutron_infoblox_ipam_agent_default_volumes + neutron_infoblox_ipam_agent_extra_volumes }}"
+    dimensions: "{{ neutron_infoblox_ipam_agent_dimensions }}"
+  neutron-metering-agent:
+    container_name: "neutron_metering_agent"
+    image: "{{ neutron_metering_agent_image_full }}"
+    privileged: True
+    enabled: "{{ enable_neutron_metering | bool }}"
+    group: "neutron-metering-agent"
+    host_in_groups: "{{ inventory_hostname in groups['neutron-metering-agent'] }}"
+    volumes: "{{ neutron_metering_agent_default_volumes + neutron_metering_agent_extra_volumes }}"
+    dimensions: "{{ neutron_metering_agent_dimensions }}"
+  ironic-neutron-agent:
+    container_name: "ironic_neutron_agent"
+    image: "{{ ironic_neutron_agent_image_full }}"
+    privileged: False
+    enabled: "{{ enable_ironic_neutron_agent | bool }}"
+    group: "ironic-neutron-agent"
+    host_in_groups: "{{ inventory_hostname in groups['ironic-neutron-agent'] }}"
+    volumes: "{{ ironic_neutron_agent_default_volumes + ironic_neutron_agent_extra_volumes }}"
+    dimensions: "{{ ironic_neutron_agent_dimensions }}"
 
 ####################
 # Database
 ####################
 neutron_database_name: "neutron"
-neutron_database_user: "neutron"
-neutron_database_address: "{{ kolla_internal_fqdn }}:{{ database_port }}"
+neutron_database_user: "{% if use_preconfigured_databases | bool and use_common_mariadb_user | bool %}{{ database_user }}{% else %}neutron{% endif %}"
+neutron_database_address: "{{ database_address }}:{{ database_port }}"
 
 
 ####################
@@ -200,9 +177,9 @@ neutron_l3_agent_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{
 neutron_l3_agent_tag: "{{ neutron_tag }}"
 neutron_l3_agent_image_full: "{{ neutron_l3_agent_image }}:{{ neutron_l3_agent_tag }}"
 
-neutron_lbaas_agent_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/{{ kolla_base_distro }}-{{ neutron_install_type }}-neutron-lbaas-agent"
-neutron_lbaas_agent_tag: "{{ neutron_tag }}"
-neutron_lbaas_agent_image_full: "{{ neutron_lbaas_agent_image }}:{{ neutron_lbaas_agent_tag }}"
+neutron_sriov_agent_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/{{ kolla_base_distro }}-{{ neutron_install_type }}-neutron-sriov-agent"
+neutron_sriov_agent_tag: "{{ neutron_tag }}"
+neutron_sriov_agent_image_full: "{{ neutron_sriov_agent_image }}:{{ neutron_sriov_agent_tag }}"
 
 neutron_linuxbridge_agent_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/{{ kolla_base_distro }}-{{ neutron_install_type }}-neutron-linuxbridge-agent"
 neutron_linuxbridge_agent_tag: "{{ neutron_tag }}"
@@ -216,22 +193,128 @@ neutron_openvswitch_agent_image: "{{ docker_registry ~ '/' if docker_registry el
 neutron_openvswitch_agent_tag: "{{ neutron_tag }}"
 neutron_openvswitch_agent_image_full: "{{ neutron_openvswitch_agent_image }}:{{ neutron_openvswitch_agent_tag }}"
 
-neutron_sfc_agent_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/{{ kolla_base_distro }}-{{ neutron_install_type }}-neutron-sfc-agent"
-neutron_sfc_agent_tag: "{{ neutron_tag }}"
-neutron_sfc_agent_image_full: "{{ neutron_sfc_agent_image }}:{{ neutron_sfc_agent_tag }}"
-
-neutron_server_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/{{ kolla_base_distro }}-{{ neutron_install_type }}-neutron-server"
+neutron_server_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/{{ kolla_base_distro }}-{{ neutron_install_type }}-neutron-server{{ '-opendaylight' if enable_opendaylight | bool else '' }}"
 neutron_server_tag: "{{ neutron_tag }}"
 neutron_server_image_full: "{{ neutron_server_image }}:{{ neutron_server_tag }}"
-
-neutron_vpnaas_agent_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/{{ kolla_base_distro }}-{{ neutron_install_type }}-neutron-vpnaas-agent"
-neutron_vpnaas_agent_tag: "{{ neutron_tag }}"
-neutron_vpnaas_agent_image_full: "{{ neutron_vpnaas_agent_image }}:{{ neutron_vpnaas_agent_tag }}"
 
 neutron_bgp_dragent_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/{{ kolla_base_distro }}-{{ neutron_install_type }}-neutron-bgp-dragent"
 neutron_bgp_dragent_tag: "{{ neutron_tag }}"
 neutron_bgp_dragent_image_full: "{{ neutron_bgp_dragent_image }}:{{ neutron_bgp_dragent_tag }}"
 
+neutron_infoblox_ipam_agent_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/{{ kolla_base_distro }}-{{ neutron_install_type }}-neutron-infoblox-ipam-agent"
+neutron_infoblox_ipam_agent_tag: "{{ neutron_tag }}"
+neutron_infoblox_ipam_agent_image_full: "{{ neutron_infoblox_ipam_agent_image }}:{{ neutron_infoblox_ipam_agent_tag }}"
+
+neutron_metering_agent_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/{{ kolla_base_distro }}-{{ neutron_install_type }}-neutron-metering-agent"
+neutron_metering_agent_tag: "{{ neutron_tag }}"
+neutron_metering_agent_image_full: "{{ neutron_metering_agent_image }}:{{ neutron_metering_agent_tag }}"
+
+ironic_neutron_agent_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/{{ kolla_base_distro }}-{{ neutron_install_type }}-ironic-neutron-agent"
+ironic_neutron_agent_tag: "{{ neutron_tag }}"
+ironic_neutron_agent_image_full: "{{ ironic_neutron_agent_image }}:{{ ironic_neutron_agent_tag }}"
+
+neutron_dhcp_agent_dimensions: "{{ default_container_dimensions }}"
+neutron_l3_agent_dimensions: "{{ default_container_dimensions }}"
+neutron_sriov_agent_dimensions: "{{ default_container_dimensions }}"
+neutron_linuxbridge_agent_dimensions: "{{ default_container_dimensions }}"
+neutron_metadata_agent_dimensions: "{{ default_container_dimensions }}"
+neutron_openvswitch_agent_dimensions: "{{ default_container_dimensions }}"
+neutron_server_dimensions: "{{ default_container_dimensions }}"
+neutron_bgp_dragent_dimensions: "{{ default_container_dimensions }}"
+neutron_infoblox_ipam_agent_dimensions: "{{ default_container_dimensions }}"
+neutron_openvswitch_agent_xenapi_dimensions: "{{ default_container_dimensions }}"
+neutron_metering_agent_dimensions: "{{ default_container_dimensions }}"
+ironic_neutron_agent_dimensions: "{{ default_container_dimensions }}"
+
+
+neutron_dhcp_agent_default_volumes:
+  - "{{ node_config_directory }}/neutron-dhcp-agent/:{{ container_config_directory }}/:ro"
+  - "/etc/localtime:/etc/localtime:ro"
+  - "/run/:/run/:shared"
+  - "neutron_metadata_socket:/var/lib/neutron/kolla/"
+  - "kolla_logs:/var/log/kolla/"
+  - "{{ kolla_dev_repos_directory ~ '/neutron/neutron:/var/lib/kolla/venv/lib/python2.7/site-packages/neutron' if neutron_dev_mode | bool else '' }}"
+neutron_l3_agent_default_volumes:
+  - "{{ node_config_directory }}/neutron-l3-agent/:{{ container_config_directory }}/:ro"
+  - "/etc/localtime:/etc/localtime:ro"
+  - "/lib/modules:/lib/modules:ro"
+  - "/run:/run:shared"
+  - "neutron_metadata_socket:/var/lib/neutron/kolla/"
+  - "kolla_logs:/var/log/kolla/"
+  - "{{ kolla_dev_repos_directory ~ '/neutron/neutron:/var/lib/kolla/venv/lib/python2.7/site-packages/neutron' if neutron_dev_mode | bool else '' }}"
+neutron_sriov_agent_default_volumes:
+  - "{{ node_config_directory }}/neutron-sriov-agent/:{{ container_config_directory }}/:ro"
+  - "/etc/localtime:/etc/localtime:ro"
+  - "/run:/run:shared"
+  - "kolla_logs:/var/log/kolla/"
+  - "{{ kolla_dev_repos_directory ~ '/neutron/neutron:/var/lib/kolla/venv/lib/python2.7/site-packages/neutron' if neutron_dev_mode | bool else '' }}"
+neutron_linuxbridge_agent_default_volumes:
+  - "{{ node_config_directory }}/neutron-linuxbridge-agent/:{{ container_config_directory }}/:ro"
+  - "/etc/localtime:/etc/localtime:ro"
+  - "/lib/modules:/lib/modules:ro"
+  - "/run:/run:shared"
+  - "kolla_logs:/var/log/kolla/"
+  - "{{ kolla_dev_repos_directory ~ '/neutron/neutron:/var/lib/kolla/venv/lib/python2.7/site-packages/neutron' if neutron_dev_mode | bool else '' }}"
+neutron_metadata_agent_default_volumes:
+  - "{{ node_config_directory }}/neutron-metadata-agent/:{{ container_config_directory }}/:ro"
+  - "/etc/localtime:/etc/localtime:ro"
+  - "/run/:/run/:shared"
+  - "neutron_metadata_socket:/var/lib/neutron/kolla/"
+  - "kolla_logs:/var/log/kolla/"
+  - "{{ kolla_dev_repos_directory ~ '/neutron/neutron:/var/lib/kolla/venv/lib/python2.7/site-packages/neutron' if neutron_dev_mode | bool else '' }}"
+neutron_openvswitch_agent_default_volumes:
+  - "{{ node_config_directory }}/neutron-openvswitch-agent/:{{ container_config_directory }}/:ro"
+  - "/etc/localtime:/etc/localtime:ro"
+  - "/lib/modules:/lib/modules:ro"
+  - "/run:/run:shared"
+  - "kolla_logs:/var/log/kolla/"
+  - "{{ kolla_dev_repos_directory ~ '/neutron/neutron:/var/lib/kolla/venv/lib/python2.7/site-packages/neutron' if neutron_dev_mode | bool else '' }}"
+neutron_server_default_volumes:
+  - "{{ node_config_directory }}/neutron-server/:{{ container_config_directory }}/:ro"
+  - "/etc/localtime:/etc/localtime:ro"
+  - "kolla_logs:/var/log/kolla/"
+  - "{{ kolla_dev_repos_directory ~ '/neutron/neutron:/var/lib/kolla/venv/lib/python2.7/site-packages/neutron' if neutron_dev_mode | bool else '' }}"
+neutron_bgp_dragent_default_volumes:
+  - "{{ node_config_directory }}/neutron-bgp-dragent/:{{ container_config_directory }}/:ro"
+  - "/etc/localtime:/etc/localtime:ro"
+  - "/run:/run:shared"
+  - "kolla_logs:/var/log/kolla/"
+neutron_infoblox_ipam_agent_default_volumes:
+  - "{{ node_config_directory }}/neutron-infoblox-ipam-agent/:{{ container_config_directory }}/:ro"
+  - "/etc/localtime:/etc/localtime:ro"
+  - "/run:/run:shared"
+  - "kolla_logs:/var/log/kolla/"
+neutron_openvswitch_agent_xenapi_default_volumes:
+  - "{{ node_config_directory }}/neutron-openvswitch-agent-xenapi/:{{ container_config_directory }}/:ro"
+  - "/etc/localtime:/etc/localtime:ro"
+  - "/lib/modules:/lib/modules:ro"
+  - "/run:/run:shared"
+  - "kolla_logs:/var/log/kolla/"
+  - "{{ kolla_dev_repos_directory ~ '/neutron/neutron:/var/lib/kolla/venv/lib/python2.7/site-packages/neutron' if neutron_dev_mode | bool else '' }}"
+neutron_metering_agent_default_volumes:
+  - "{{ node_config_directory }}/neutron-metering-agent/:{{ container_config_directory }}/:ro"
+  - "/etc/localtime:/etc/localtime:ro"
+  - "/run:/run:shared"
+  - "kolla_logs:/var/log/kolla/"
+  - "{{ kolla_dev_repos_directory ~ '/neutron/neutron:/var/lib/kolla/venv/lib/python2.7/site-packages/neutron' if neutron_dev_mode | bool else '' }}"
+ironic_neutron_agent_default_volumes:
+  - "{{ node_config_directory }}/ironic-neutron-agent/:{{ container_config_directory }}/:ro"
+  - "/etc/localtime:/etc/localtime:ro"
+  - "kolla_logs:/var/log/kolla/"
+
+neutron_extra_volumes: "{{ default_extra_volumes }}"
+neutron_dhcp_agent_extra_volumes: "{{ neutron_extra_volumes }}"
+neutron_l3_agent_extra_volumes: "{{ neutron_extra_volumes }}"
+neutron_sriov_agent_extra_volumes: "{{ neutron_extra_volumes }}"
+neutron_linuxbridge_agent_extra_volumes: "{{ neutron_extra_volumes }}"
+neutron_metadata_agent_extra_volumes: "{{ neutron_extra_volumes }}"
+neutron_openvswitch_agent_extra_volumes: "{{ neutron_extra_volumes }}"
+neutron_server_extra_volumes: "{{ neutron_extra_volumes }}"
+neutron_bgp_dragent_extra_volumes: "{{ neutron_extra_volumes }}"
+neutron_infoblox_ipam_agent_extra_volumes: "{{ neutron_extra_volumes }}"
+neutron_openvswitch_agent_xenapi_extra_volumes: "{{ neutron_extra_volumes }}"
+neutron_metering_agent_extra_volumes: "{{ neutron_extra_volumes }}"
+ironic_neutron_agent_extra_volumes: "{{ neutron_extra_volumes }}"
 
 ####################
 # OpenStack
@@ -239,47 +322,66 @@ neutron_bgp_dragent_image_full: "{{ neutron_bgp_dragent_image }}:{{ neutron_bgp_
 dhcp_agents_per_network: 2
 max_l3_agents_per_router: 3
 
-neutron_admin_endpoint: "{{ admin_protocol }}://{{ kolla_internal_fqdn }}:{{ neutron_server_port }}"
-neutron_internal_endpoint: "{{ internal_protocol }}://{{ kolla_internal_fqdn }}:{{ neutron_server_port }}"
-neutron_public_endpoint: "{{ public_protocol }}://{{ kolla_external_fqdn }}:{{ neutron_server_port }}"
+# valid value is: ["v1", "v2"]
+neutron_fwaas_version: "v1"
+
+neutron_admin_endpoint: "{{ admin_protocol }}://{{ neutron_internal_fqdn }}:{{ neutron_server_port }}"
+neutron_internal_endpoint: "{{ internal_protocol }}://{{ neutron_internal_fqdn }}:{{ neutron_server_port }}"
+neutron_public_endpoint: "{{ public_protocol }}://{{ neutron_external_fqdn }}:{{ neutron_server_port }}"
 
 neutron_logging_debug: "{{ openstack_logging_debug }}"
 
 openstack_neutron_auth: "{{ openstack_auth }}"
+
+neutron_l3_agent_host_rp_filter_mode: 0
 
 ####################
 # Extension drivers
 ####################
 extension_drivers:
   - name: "qos"
-    enabled: "{{ enable_neutron_qos | bool }}"
+    enabled: "{{ enable_neutron_qos | bool or enable_opendaylight_qos | bool }}"
   - name: "port_security"
     enabled: true
   - name: "dns"
     enabled: "{{ enable_designate | bool }}"
+  - name: "sfc"
+    enabled: "{{ enable_neutron_sfc | bool }}"
 
 neutron_extension_drivers: "{{ extension_drivers|selectattr('enabled', 'equalto', true)|list }}"
+
+####################
+# Neutron upgrade
+####################
+neutron_enable_rolling_upgrade: "yes"
+neutron_rolling_upgrade_services: ["neutron", "neutron-fwaas", "neutron-vpnaas"]
 
 ####################
 # Service Plugins
 ####################
 service_plugins:
-  - name: "flow_classifier"
-    enabled: "{{ neutron_plugin_agent == 'sfc' }}"
-  - name: "lbaasv2"
-    enabled: "{{ enable_neutron_lbaas | bool }}"
   - name: "firewall"
-    enabled: "{{ enable_neutron_fwaas | bool }}"
-  - name: "vpnaas"
-    enabled: "{{ enable_neutron_vpnaas | bool }}"
-  - name: "qos"
-    enabled: "{{ enable_neutron_qos | bool }}"
-  - name: "router"
-    enabled: true
-  - name: "sfc"
-    enabled: "{{ neutron_plugin_agent == 'sfc' }}"
+    enabled: "{{ enable_neutron_fwaas | bool and neutron_fwaas_version == 'v1' }}"
+  - name: "firewall_v2"
+    enabled: "{{ enable_neutron_fwaas | bool and neutron_fwaas_version == 'v2' }}"
+  - name: "flow_classifier"
+    enabled: "{{ enable_neutron_sfc | bool }}"
+  - name: "metering"
+    enabled: "{{ enable_neutron_metering | bool }}"
   - name: "neutron_dynamic_routing.services.bgp.bgp_plugin.BgpPlugin"
     enabled: "{{ enable_neutron_bgp_dragent | bool }}"
+  - name: "qos"
+    enabled: "{{ enable_neutron_qos | bool or enable_opendaylight_qos | bool}}"
+  - name: "router"
+    enabled: "{{ not enable_opendaylight_l3 | bool }}"
+  - name: "segments"
+    enabled: "{{ enable_neutron_segments | bool }}"
+  - name: "sfc"
+    enabled: "{{ enable_neutron_sfc | bool }}"
+  - name: "vpnaas"
+    enabled: "{{ enable_neutron_vpnaas | bool }}"
+  - name: "{{ opendaylight_l3_service_plugin }}"
+    enabled: "{{ enable_opendaylight_l3 | bool and enable_opendaylight | bool }}"
 
 neutron_service_plugins: "{{ service_plugins|selectattr('enabled', 'equalto', true)|list }}"
 
@@ -288,17 +390,39 @@ neutron_service_plugins: "{{ service_plugins|selectattr('enabled', 'equalto', tr
 ####################
 neutron_notification_topics:
   - name: notifications
-    enabled: "{{ enable_ceilometer | bool or enable_searchlight | bool }}"
+    enabled: "{{ enable_ceilometer | bool or enable_searchlight | bool or enable_neutron_infoblox_ipam_agent | bool }}"
   - name: notifications_designate
     enabled: "{{ enable_designate | bool }}"
+  - name: vitrage_notifications
+    enabled: "{{ enable_vitrage | bool }}"
 
 neutron_enabled_notification_topics: "{{ neutron_notification_topics | selectattr('enabled', 'equalto', true) | list }}"
+
+####################
+# Agent Extensions
+####################
+agent_extensions:
+  - name: "qos"
+    enabled: "{{ enable_neutron_qos | bool }}"
+  - name: "sfc"
+    enabled: "{{ enable_neutron_sfc | bool }}"
+
+neutron_agent_extensions: "{{ agent_extensions | selectattr('enabled', 'equalto', true) | list }}"
+
+l3_agent_extensions:
+  - name: "fwaas"
+    enabled: "{{ enable_neutron_fwaas | bool and neutron_fwaas_version == 'v1' }}"
+  - name: "fwaas_v2"
+    enabled: "{{ enable_neutron_fwaas | bool and neutron_fwaas_version == 'v2' }}"
+  - name: "vpnaas"
+    enabled: "{{ enable_neutron_vpnaas | bool }}"
+
+neutron_l3_agent_extensions: "{{ l3_agent_extensions | selectattr('enabled', 'equalto', true) | list }}"
 
 ####################
 # VMware NSXV
 ####################
 vmware_nsxv_user: "nsx_manager_user"
-vmware_nsxv_password: "nsx_manager_password"
 vmware_nsxv_manager_uri: "https://127.0.0.1"
 vmware_nsxv_insecure: "True"
 vmware_nsxv_cluster_moid: "TestCluster"
@@ -313,3 +437,57 @@ vmware_nsxv_spoofguard_enabled: "false"
 vmware_nsxv_metadata_initializer: "false"
 vmware_nsxv_edge_ha: "false"
 
+####################
+# VMware NSXV3
+####################
+nsxv3_metadata_proxy: "metadata proxy uuid"
+nsxv3_dhcp_profile: "dhcp service uuid"
+nsxv3_native_dhcp_metadata: "true"
+nsxv3_api_user: "user"
+nsxv3_api_managers: "127.0.0.1"
+nsxv3_default_tier0_router: "tier0 router uuid"
+nsxv3_default_vlan_tz: "vlan TZ uuid"
+nsxv3_default_overlay_tz: "overlay TZ uuid"
+
+####################
+# VMware DVS
+####################
+vmware_dvs_host_ip: "192.168.1.1"
+vmware_dvs_host_port: "443"
+vmware_dvs_host_username: "admin"
+vmware_dvs_insecure: "True"
+vmware_dvs_dvs_name: "VDS-1"
+vmware_dvs_dhcp_override_mac: ""
+
+####################
+# Infoblox IPAM
+####################
+infoblox_cloud_data_center_id: "1"
+infoblox_grid_master_host: "192.168.1.1"
+infoblox_grid_master_name: "infoblox.localdomain"
+infoblox_admin_user_name: "admin"
+infoblox_wapi_version: "2.3"
+infoblox_wapi_max_results: "-50000"
+
+######################
+# Notification Drivers
+######################
+notification_drivers:
+  - name: "odl-qos-v2"
+    enabled: "{{ enable_opendaylight_qos | bool }}"
+
+neutron_notification_drivers: "{{ notification_drivers|selectattr('enabled', 'equalto', true)|list }}"
+
+############
+# Onos
+############
+onos_url: "127.0.0.1"
+onos_username: "username"
+
+####################
+# Kolla
+####################
+neutron_git_repository: "{{ kolla_dev_repos_git }}/{{ project_name }}"
+neutron_dev_repos_pull: "{{ kolla_dev_repos_pull }}"
+neutron_dev_mode: "{{ kolla_dev_mode }}"
+neutron_source_version: "{{ kolla_source_version }}"

@@ -1,31 +1,28 @@
 ---
-# Create new set of configs on nodes
-- include: config.yml
+- name: Check nova upgrade status
+  become: true
+  command: docker exec -t nova_api nova-status upgrade check
+  register: nova_upgrade_check_stdout
+  when: inventory_hostname == groups['nova-api'][0]
 
-- include: bootstrap_service.yml
+- name: Upgrade status check result
+  fail:
+    msg:
+      - "There was an upgrade status check warning or failure!"
+      - "See the detail at https://docs.openstack.org/nova/latest/cli/nova-status.html#nova-status-checks"
+  vars:
+    first_nova_api_host: "{{ groups['nova-api'][0] }}"
+  when: hostvars[first_nova_api_host]['nova_upgrade_check_stdout']['rc'] != 0
 
-- include: register.yml
+- include_tasks: legacy_upgrade.yml
+  when: not nova_enable_rolling_upgrade | bool
 
-- name: Checking if conductor container needs upgrading
+- include_tasks: rolling_upgrade.yml
+  when: nova_enable_rolling_upgrade | bool
+
+# NOTE(jeffrey4l): Remove this task in U cycle.
+- name: Remove nova-consoleauth container
+  become: true
   kolla_docker:
-    action: "compare_image"
-    common_options: "{{ docker_common_options }}"
-    name: "nova_conductor"
-    image: "{{ nova_conductor_image_full }}"
-  when: inventory_hostname in groups['nova-conductor']
-  register: conductor_differs
-
-# Short downtime here, but from user perspective his call will just timeout or execute later
-- name: Stopping all nova_conductor containers
-  kolla_docker:
-    action: "stop_container"
-    common_options: "{{ docker_common_options }}"
-    name: "nova_conductor"
-  when:
-    - inventory_hostname in groups['nova-conductor']
-    - conductor_differs['result']
-
-- name: Flush handlers
-  meta: flush_handlers
-
-- include: reload.yml
+    action: "remove_container"
+    name: "nova_consoleauth"

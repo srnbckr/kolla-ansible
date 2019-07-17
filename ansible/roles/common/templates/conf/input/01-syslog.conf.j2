@@ -1,11 +1,9 @@
 <source>
   @type syslog
   port {{ fluentd_syslog_port }}
-{% if orchestration_engine != 'KUBERNETES' %}
   bind {{ api_interface_address }}
-{% else %}
-  bind 0.0.0.0
-{% endif %}
   tag syslog
+  priority_key log_level
+  source_hostname_key Hostname
   format /^(?<Payload>.*)$/
 </source>

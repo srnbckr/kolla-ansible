@@ -1,5 +1,6 @@
 ---
 - name: Get container facts
+  become: true
   kolla_container_facts:
     name:
       - swift_account_server
@@ -10,7 +11,7 @@
 
 - name: Checking free port for Swift Account Server
   wait_for:
-    host: "{{ hostvars[inventory_hostname]['ansible_' + storage_interface]['ipv4']['address'] }}"
+    host: "{{ hostvars[inventory_hostname]['ansible_' + swift_storage_interface]['ipv4']['address'] }}"
     port: "{{ swift_account_server_port }}"
     connect_timeout: 1
     timeout: 1
@@ -21,7 +22,7 @@
 
 - name: Checking free port for Swift Container Server
   wait_for:
-    host: "{{ hostvars[inventory_hostname]['ansible_' + storage_interface]['ipv4']['address'] }}"
+    host: "{{ hostvars[inventory_hostname]['ansible_' + swift_storage_interface]['ipv4']['address'] }}"
     port: "{{ swift_container_server_port }}"
     connect_timeout: 1
     timeout: 1
@@ -32,7 +33,40 @@
 
 - name: Checking free port for Swift Object Server
   wait_for:
-    host: "{{ hostvars[inventory_hostname]['ansible_' + storage_interface]['ipv4']['address'] }}"
+    host: "{{ hostvars[inventory_hostname]['ansible_' + swift_storage_interface]['ipv4']['address'] }}"
+    port: "{{ swift_object_server_port }}"
+    connect_timeout: 1
+    timeout: 1
+    state: stopped
+  when:
+    - container_facts['swift_object_server'] is not defined
+    - inventory_hostname in groups['swift-object-server']
+
+- name: Checking free port for Swift Account Replication Server
+  wait_for:
+    host: "{{ hostvars[inventory_hostname]['ansible_' + swift_replication_interface]['ipv4']['address'] }}"
+    port: "{{ swift_account_server_port }}"
+    connect_timeout: 1
+    timeout: 1
+    state: stopped
+  when:
+    - container_facts['swift_account_server'] is not defined
+    - inventory_hostname in groups['swift-account-server']
+
+- name: Checking free port for Swift Container Replication Server
+  wait_for:
+    host: "{{ hostvars[inventory_hostname]['ansible_' + swift_replication_interface]['ipv4']['address'] }}"
+    port: "{{ swift_container_server_port }}"
+    connect_timeout: 1
+    timeout: 1
+    state: stopped
+  when:
+    - container_facts['swift_container_server'] is not defined
+    - inventory_hostname in groups['swift-container-server']
+
+- name: Checking free port for Swift Object Replication Server
+  wait_for:
+    host: "{{ hostvars[inventory_hostname]['ansible_' + swift_replication_interface]['ipv4']['address'] }}"
     port: "{{ swift_object_server_port }}"
     connect_timeout: 1
     timeout: 1
@@ -43,7 +77,7 @@
 
 - name: Checking free port for Rsync
   wait_for:
-    host: "{{ hostvars[inventory_hostname]['ansible_' + storage_interface]['ipv4']['address'] }}"
+    host: "{{ hostvars[inventory_hostname]['ansible_' + swift_replication_interface]['ipv4']['address'] }}"
     port: "873"
     connect_timeout: 1
     timeout: 1
@@ -55,10 +89,29 @@
 - name: Checking free port for Swift Proxy Server
   wait_for:
     host: "{{ api_interface_address }}"
-    port: "{{ swift_proxy_server_port }}"
+    port: "{{ swift_proxy_server_listen_port }}"
     connect_timeout: 1
     timeout: 1
     state: stopped
   when:
     - container_facts['swift_proxy_server'] is not defined
     - inventory_hostname in groups['swift-proxy-server']
+
+- name: Checking Swift ring files
+  run_once: True
+  local_action: stat path="{{ node_custom_config }}/swift/{{ item }}"
+  register: swift_ring_files
+  with_items:
+    - "account.builder"
+    - "account.ring.gz"
+    - "container.builder"
+    - "container.ring.gz"
+    - "object.builder"
+    - "object.ring.gz"
+
+- name: Fail if ring files don't exist
+  run_once: True
+  local_action: fail msg="Swift ring files do not exist. Ensure .builder and .gz are available for each of account/container/object under {{ node_custom_config }}/swift before deploying Swift."
+  with_items: '{{ swift_ring_files.results }}'
+  when:
+    - item.stat.exists == false

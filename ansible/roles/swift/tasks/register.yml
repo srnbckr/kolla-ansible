@@ -1,5 +1,6 @@
 ---
 - name: Creating the Swift service and endpoint
+  become: true
   kolla_toolbox:
     module_name: "kolla_keystone_service"
     module_args:
@@ -10,9 +11,8 @@
       url: "{{ item.url }}"
       interface: "{{ item.interface }}"
       region_name: "{{ openstack_region_name }}"
-      auth: "{{ '{{ openstack_swift_auth }}' }}"
-    module_extra_vars:
-      openstack_swift_auth: "{{ openstack_swift_auth }}"
+      auth: "{{ openstack_swift_auth }}"
+      endpoint_type: "{{ openstack_interface }}"
   run_once: True
   with_items:
     - {'interface': 'admin', 'url': '{{ swift_admin_endpoint }}'}
@@ -20,6 +20,7 @@
     - {'interface': 'public', 'url': '{{ swift_public_endpoint }}'}
 
 - name: Creating the Swift project, user, and role
+  become: true
   kolla_toolbox:
     module_name: "kolla_keystone_user"
     module_args:
@@ -28,18 +29,17 @@
       password: "{{ swift_keystone_password }}"
       role: "{{ swift_admin_tenant_name }}"
       region_name: "{{ openstack_region_name }}"
-      auth: "{{ '{{ openstack_swift_auth }}' }}"
-    module_extra_vars:
-      openstack_swift_auth: "{{ openstack_swift_auth }}"
+      auth: "{{ openstack_swift_auth }}"
+      endpoint_type: "{{ openstack_interface }}"
   run_once: True
 
 - name: Creating the ResellerAdmin role
+  become: true
   kolla_toolbox:
     module_name: "os_keystone_role"
     module_args:
       name: "ResellerAdmin"
       region_name: "{{ openstack_region_name }}"
-      auth: "{{ '{{ openstack_swift_auth }}' }}"
-    module_extra_vars:
-      openstack_swift_auth: "{{ openstack_swift_auth }}"
+      auth: "{{ openstack_swift_auth }}"
+      endpoint_type: "{{ openstack_interface }}"
   run_once: True

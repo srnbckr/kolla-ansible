@@ -2,6 +2,7 @@
 - name: Running Cinder bootstrap container
   vars:
     cinder_api: "{{ cinder_services['cinder-api'] }}"
+  become: true
   kolla_docker:
     action: "start_container"
     common_options: "{{ docker_common_options }}"
@@ -14,6 +15,6 @@
       BOOTSTRAP:
     name: "bootstrap_cinder"
     restart_policy: "never"
-    volumes: "{{ cinder_api.volumes }}"
+    volumes: "{{ cinder_api.volumes|reject('equalto', '')|list }}"
   run_once: True
   delegate_to: "{{ groups[cinder_api.group][0] }}"

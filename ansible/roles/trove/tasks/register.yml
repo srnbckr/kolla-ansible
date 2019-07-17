@@ -1,5 +1,6 @@
 ---
 - name: Creating the Trove service and endpoint
+  become: true
   kolla_toolbox:
     module_name: "kolla_keystone_service"
     module_args:
@@ -10,9 +11,8 @@
       url: "{{ item.url }}"
       interface: "{{ item.interface }}"
       region_name: "{{ openstack_region_name }}"
-      auth: "{{ '{{ openstack_trove_auth }}' }}"
-    module_extra_vars:
-      openstack_trove_auth: "{{ openstack_trove_auth }}"
+      auth: "{{ openstack_trove_auth }}"
+      endpoint_type: "{{ openstack_interface }}"
   run_once: True
   with_items:
     - {'interface': 'admin', 'url': '{{ trove_admin_endpoint }}'}
@@ -20,6 +20,7 @@
     - {'interface': 'public', 'url': '{{ trove_public_endpoint }}'}
 
 - name: Creating the Trove project, user, and role
+  become: true
   kolla_toolbox:
     module_name: "kolla_keystone_user"
     module_args:
@@ -28,7 +29,6 @@
       password: "{{ trove_keystone_password }}"
       role: "admin"
       region_name: "{{ openstack_region_name }}"
-      auth: "{{ '{{ openstack_trove_auth }}' }}"
-    module_extra_vars:
-      openstack_trove_auth: "{{ openstack_trove_auth }}"
+      auth: "{{ openstack_trove_auth }}"
+      endpoint_type: "{{ openstack_interface }}"
   run_once: True

@@ -1,26 +1,19 @@
 ### Skydive agent config file
 
 auth:
-  type: keystone
   analyzer_username: {{ openstack_auth['username'] }}
   analyzer_password: {{ openstack_auth['password'] }}
 
 logging:
-  default: DEBUG
-  topology/probes: INFO
-  topology/graph: INFO
-
-openstack:
-  auth_url: {{ keystone_public_url }}/v3
-  username: {{ openstack_auth['username'] }}
-  password: {{ openstack_auth['password'] }}
-  tenant_name: {{ openstack_auth['project_name'] }}
-  region_name: {{ openstack_region_name }}
-  domain_name: Default
+  level: INFO
+  backends:
+    - file
+  file:
+    path: /var/log/kolla/skydive/skydive-agent.log
 
 etcd:
   servers:
-{% if enable_etcd == "yes" %}
+{% if enable_etcd | bool %}
 {% for host in groups['etcd'] %}
     - http://{{ hostvars[host]['ansible_' + hostvars[host]['api_interface']]['ipv4']['address'] }}:{{ etcd_client_port }}
 {% endfor %}
@@ -40,7 +33,7 @@ agent:
   flow:
     probes:
       - gopacket
-{% if neutron_plugin_agent == "openvswitch" %}
+{% if neutron_plugin_agent in ['openvswitch', 'opendaylight'] %}
       - ovssflow
 {% endif %}
   topology:
@@ -48,7 +41,29 @@ agent:
       - netlink
       - netns
       - neutron
-{% if neutron_plugin_agent == "openvswitch" %}
+{% if neutron_plugin_agent in ['openvswitch', 'opendaylight'] %}
       - ovsdb
 {% endif %}
 
+    neutron:
+      auth_url: {{ keystone_internal_url }}/v3
+      username: {{ openstack_auth['username'] }}
+      password: {{ openstack_auth['password'] }}
+      tenant_name: {{ openstack_auth['project_name'] }}
+      region_name: {{ openstack_region_name }}
+      domain_name: Default
+      endpoint_type: internal
+
+netns:
+  run_path: /host/run
+
+flow:
+  expire: 600
+  update: 60
+
+{% if neutron_plugin_agent in ['openvswitch', 'opendaylight'] %}
+ovs:
+  ovsdb: tcp://127.0.0.1:{{ ovsdb_port }}
+  oflow:
+    enable: true
+{% endif %}

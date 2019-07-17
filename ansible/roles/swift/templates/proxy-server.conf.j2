@@ -1,21 +1,24 @@
 [DEFAULT]
 bind_ip = {{ api_interface_address }}
-bind_port = {{ swift_proxy_server_port }}
+bind_port = {{ swift_proxy_server_listen_port }}
 
-log_udp_host = {{ api_interface_address }}
-log_udp_port = {{ fluentd_syslog_port }}
+log_udp_host = {{ syslog_server }}
+log_udp_port = {{ syslog_udp_port }}
 log_name = {{ service_name }}
-log_facility = LOG_LOCAL0
-log_level = INFO
+log_facility = {{ syslog_swift_facility }}
+log_level = {{ swift_log_level }}
 workers = {{ openstack_service_workers }}
 
 [pipeline:main]
-pipeline = catch_errors gatekeeper healthcheck cache container_sync bulk ratelimit authtoken keystoneauth slo dlo {% if enable_ceilometer | bool %}ceilometer {% endif %}proxy-server
+pipeline = catch_errors gatekeeper healthcheck cache container_sync bulk tempurl ratelimit authtoken keystoneauth container_quotas account_quotas slo dlo {% if enable_ceilometer | bool %}ceilometer {% endif %}proxy-server
 
 [app:proxy-server]
 use = egg:swift#proxy
 allow_account_management = true
 account_autocreate = true
+
+[filter:tempurl]
+use = egg:swift#tempurl
 
 [filter:cache]
 use = egg:swift#memcache
@@ -32,14 +35,15 @@ use = egg:swift#proxy_logging
 
 [filter:authtoken]
 paste.filter_factory = keystonemiddleware.auth_token:filter_factory
-auth_uri = {{ internal_protocol }}://{{ kolla_internal_fqdn }}:{{ keystone_public_port }}
-auth_url = {{ admin_protocol }}://{{ kolla_internal_fqdn }}:{{ keystone_admin_port }}
+auth_uri = {{ keystone_internal_url }}
+auth_url = {{ keystone_admin_url }}
 auth_type = password
 project_domain_id = {{ default_project_domain_id }}
 user_domain_id = {{ default_user_domain_id }}
 project_name = service
 username = {{ swift_keystone_user }}
 password = {{ swift_keystone_password }}
+delay_auth_decision = {{ swift_delay_auth_decision }}
 
 memcache_security_strategy = ENCRYPT
 memcache_secret_key = {{ memcache_secret_key }}
@@ -54,8 +58,7 @@ operator_roles = admin,{{ keystone_default_user_role }},ResellerAdmin
 [filter:ceilometer]
 paste.filter_factory = ceilometermiddleware.swift:filter_factory
 control_exchange = swift
-url = rabbit://{% for host in groups['rabbitmq'] %}{{ rabbitmq_user }}:{{ rabbitmq_password }}@{{ hostvars[host]['ansible_' + hostvars[host]['api_interface']]['ipv4']['address'] }}:{{ rabbitmq_port }}{% if not loop.last %},{% endif %}{% endfor %}
-
+url = {{ notify_transport_url }}
 driver = messagingv2
 topic = notifications
 log_level = WARN
@@ -73,8 +76,18 @@ use = egg:swift#ratelimit
 [filter:gatekeeper]
 use = egg:swift#gatekeeper
 
+[filter:account_quotas]
+use = egg:swift#account_quotas
+
+[filter:container_quotas]
+use = egg:swift#container_quotas
+
 [filter:slo]
 use = egg:swift#slo
 
 [filter:dlo]
 use = egg:swift#dlo
+
+[filter:versioned_writes]
+use = egg:swift#versioned_writes
+allow_versioned_writes = True

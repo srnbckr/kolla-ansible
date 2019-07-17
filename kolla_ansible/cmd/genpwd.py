@@ -19,11 +19,11 @@ import random
 import string
 import sys
 
+from cryptography import fernet
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import serialization
 from hashlib import md5
-from hashlib import sha256
 from oslo_utils import uuidutils
 import yaml
 
@@ -46,12 +46,50 @@ def generate_RSA(bits=4096):
         encoding=serialization.Encoding.PEM,
         format=serialization.PrivateFormat.PKCS8,
         encryption_algorithm=serialization.NoEncryption()
-    )
+    ).decode()
     public_key = new_key.public_key().public_bytes(
         encoding=serialization.Encoding.OpenSSH,
         format=serialization.PublicFormat.OpenSSH
-    )
+    ).decode()
     return private_key, public_key
+
+
+def genpwd(passwords_file, length, uuid_keys, ssh_keys, blank_keys,
+           fernet_keys, hmac_md5_keys):
+    with open(passwords_file, 'r') as f:
+        passwords = yaml.safe_load(f.read())
+
+    for k, v in passwords.items():
+        if (k in ssh_keys and
+                (v is None
+                 or v.get('public_key') is None
+                 and v.get('private_key') is None)):
+            private_key, public_key = generate_RSA()
+            passwords[k] = {
+                'private_key': private_key,
+                'public_key': public_key
+            }
+            continue
+        if v is None:
+            if k in blank_keys and v is None:
+                continue
+            if k in uuid_keys:
+                passwords[k] = uuidutils.generate_uuid()
+            elif k in hmac_md5_keys:
+                passwords[k] = (hmac.new(
+                    uuidutils.generate_uuid().encode(), ''.encode(), md5)
+                    .hexdigest())
+            elif k in fernet_keys:
+                passwords[k] = fernet.Fernet.generate_key()
+            else:
+                passwords[k] = ''.join([
+                    random.SystemRandom().choice(
+                        string.ascii_letters + string.digits)
+                    for n in range(length)
+                ])
+
+    with open(passwords_file, 'w') as f:
+        f.write(yaml.safe_dump(passwords, default_flow_style=False))
 
 
 def main():
@@ -59,7 +97,7 @@ def main():
     parser.add_argument(
         '-p', '--passwords', type=str,
         default=os.path.abspath('/etc/kolla/passwords.yml'),
-        help=('Path to the passwords yml file'))
+        help=('Path to the passwords.yml file'))
 
     args = parser.parse_args()
     passwords_file = os.path.expanduser(args.passwords)
@@ -85,48 +123,15 @@ def main():
     hmac_md5_keys = ['designate_rndc_key',
                      'osprofiler_secret']
 
-    # HMAC-SHA256 keys
-    hmac_sha256_keys = ['barbican_crypto_key']
+    # Fernet keys
+    fernet_keys = ['barbican_crypto_key']
 
     # length of password
     length = 40
 
-    with open(passwords_file, 'r') as f:
-        passwords = yaml.safe_load(f.read())
+    genpwd(passwords_file, length, uuid_keys, ssh_keys, blank_keys,
+           fernet_keys, hmac_md5_keys)
 
-    for k, v in passwords.items():
-        if (k in ssh_keys and
-                (v is None
-                 or v.get('public_key') is None
-                 and v.get('private_key') is None)):
-            private_key, public_key = generate_RSA()
-            passwords[k] = {
-                'private_key': private_key,
-                'public_key': public_key
-            }
-            continue
-        if v is None:
-            if k in blank_keys and v is None:
-                continue
-            if k in uuid_keys:
-                passwords[k] = uuidutils.generate_uuid()
-            elif k in hmac_md5_keys:
-                passwords[k] = (hmac.new(
-                    uuidutils.generate_uuid(), '', md5)
-                    .digest().encode('base64')[:-1])
-            elif k in hmac_sha256_keys:
-                passwords[k] = (hmac.new(
-                    uuidutils.generate_uuid(), '', sha256)
-                    .digest().encode('base64')[:-1])
-            else:
-                passwords[k] = ''.join([
-                    random.SystemRandom().choice(
-                        string.ascii_letters + string.digits)
-                    for n in range(length)
-                ])
-
-    with open(passwords_file, 'w') as f:
-        f.write(yaml.safe_dump(passwords, default_flow_style=False))
 
 if __name__ == '__main__':
     main()

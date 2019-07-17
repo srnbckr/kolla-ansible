@@ -1,4 +1,8 @@
 ---
+- import_playbook: detect-release.yml
+  vars:
+    detect_release_hosts: bifrost
+
 - name: Apply role bifrost
   hosts: bifrost
   roles:

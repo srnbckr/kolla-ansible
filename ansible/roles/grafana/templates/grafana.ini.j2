@@ -2,6 +2,7 @@
 data = /var/lib/grafana
 logs = /var/log/kolla/grafana
 plugins = /var/lib/grafana/plugins
+provisioning = /etc/grafana/provisioning
 
 [server]
 protocol = http
@@ -35,5 +36,5 @@ reporting_enabled = false
 check_for_updates = false
 
 [security]
-admin_user = admin
+admin_user = {{ grafana_admin_username }}
 admin_password = {{ grafana_admin_password }}

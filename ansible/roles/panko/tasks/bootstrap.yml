@@ -1,35 +1,38 @@
 ---
 - name: Creating Panko MongoDB database
-  command: docker exec -t mongodb mongo --host {{ panko_database_mongodb_address }} --eval 'db = db.getSiblingDB("{{ panko_database_name }}"); db.createUser({user':' "{{ panko_database_user }}", pwd':' "{{ panko_database_password }}", roles':' [ "readWrite", "dbAdmin" ]})'
+  become: true
+  command: docker exec -t mongodb mongo --host {{ mongodb_replication_set_name }}/{{ panko_database_mongodb_address }} --eval 'db = db.getSiblingDB("{{ panko_database_name }}"); db.createUser({user':' "{{ panko_database_user }}", pwd':' "{{ panko_database_password }}", roles':' [ "readWrite", "dbAdmin" ]})'
   register: mongodb_panko_database
   run_once: true
-  changed_when: "{{ 'already' not in mongodb_panko_database.stdout }}"
-  failed_when: "{{ mongodb_panko_database.stdout.split()[4] != 'connecting' }}"
+  changed_when: mongodb_panko_database.stdout.find('already') == -1
+  failed_when: mongodb_panko_database.stdout.split()[4] != 'connecting'
   delegate_to: "{{ groups['mongodb'][0] }}"
   when:
     - panko_database_type == "mongodb"
 
 - name: Creating Panko mysql database
+  become: true
   kolla_toolbox:
     module_name: mysql_db
     module_args:
-      login_host: "{{ panko_database_mysql_address }}"
-      login_port: "{{ panko_database_port }}"
+      login_host: "{{ database_address }}"
+      login_port: "{{ database_port }}"
       login_user: "{{ database_user }}"
       login_password: "{{ database_password }}"
       name: "{{ panko_database_name }}"
-  register: mysql_panko_database
   run_once: True
   delegate_to: "{{ groups['panko-api'][0] }}"
   when:
+    - not use_preconfigured_databases | bool
     - panko_database_type == "mysql"
 
 - name: Creating Panko mysql database user and setting permissions
+  become: true
   kolla_toolbox:
     module_name: mysql_user
     module_args:
-      login_host: "{{ panko_database_mysql_address }}"
-      login_port: "{{ panko_database_port }}"
+      login_host: "{{ database_address }}"
+      login_port: "{{ database_port }}"
       login_user: "{{ database_user }}"
       login_password: "{{ database_password }}"
       name: "{{ panko_database_user }}"
@@ -40,8 +43,7 @@
   run_once: True
   delegate_to: "{{ groups['panko-api'][0] }}"
   when:
+    - not use_preconfigured_databases | bool
     - panko_database_type == "mysql"
 
-- include: bootstrap_service.yml
-  when: (panko_database_type == "mongodb" and mongodb_panko_database.changed)
-         or (panko_database_type == "mysql" and mysql_panko_database.changed)
+- include_tasks: bootstrap_service.yml

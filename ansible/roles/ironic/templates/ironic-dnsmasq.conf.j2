@@ -1,16 +1,25 @@
 port=0
-{% if orchestration_engine != 'KUBERNETES' %}
-interface={{ api_interface }}
+interface={{ ironic_dnsmasq_interface }}
 dhcp-range={{ ironic_dnsmasq_dhcp_range }}
-dhcp-option=option:tftp-server,{{ kolla_internal_vip_address }}
-dhcp-option=option:server-ip-address,{{ kolla_internal_vip_address }}
-{% else %}
-interface=undefined
-dhcp-range=
-dhcp-option=option:tftp-server,undefined
-dhcp-option=option:server-ip-address,undefined
+{% if ironic_dnsmasq_default_gateway is not none %}
+dhcp-option=3,{{ ironic_dnsmasq_default_gateway }}
 {% endif %}
+dhcp-option=option:tftp-server,{{ api_interface_address }}
+dhcp-option=option:server-ip-address,{{ api_interface_address }}
 bind-interfaces
 dhcp-sequential-ip
-dhcp-option=option:bootfile-name,pxelinux.0
 dhcp-option=210,/tftpboot/
+{% if enable_ironic_ipxe | bool %}
+dhcp-match=ipxe,175
+dhcp-match=set:efi,option:client-arch,7
+dhcp-match=set:efi,option:client-arch,9
+# Client is already running iPXE; move to next stage of chainloading
+dhcp-option=tag:ipxe,option:bootfile-name,{{ ironic_ipxe_url }}/inspector.ipxe
+# Client is PXE booting over EFI without iPXE ROM,
+# send EFI version of iPXE chainloader
+dhcp-option=tag:efi,tag:!ipxe,option:bootfile-name,ipxe.efi
+{% endif %}
+dhcp-option=option:bootfile-name,{{ ironic_dnsmasq_boot_file }}
+{% if ironic_inspector_pxe_filter == 'dnsmasq' %}
+dhcp-hostsdir=/etc/dnsmasq/dhcp-hostsdir
+{% endif %}

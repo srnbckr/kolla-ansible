@@ -1,14 +1,21 @@
 #!/bin/bash
-#
+
+set -o errexit
+
 # This script is meant to be run once after running start for the first
 # time.  This script downloads a cirros image and registers it.  Then it
 # configures networking and nova quotas to allow 40 m1.small instances
 # to be created.
 
-IMAGE_URL=http://download.cirros-cloud.net/0.3.5/
-IMAGE=cirros-0.3.5-x86_64-disk.img
+ARCH=$(uname -m)
+IMAGE_PATH=/opt/cache/files/
+IMAGE_URL=http://download.cirros-cloud.net/0.4.0/
+IMAGE=cirros-0.4.0-${ARCH}-disk.img
 IMAGE_NAME=cirros
 IMAGE_TYPE=linux
+
+# This EXT_NET_CIDR is your public network,that you want to connect to the internet via.
+ENABLE_EXT_NET=${ENABLE_EXT_NET:-1}
 EXT_NET_CIDR='10.0.2.0/24'
 EXT_NET_RANGE='start=10.0.2.150,end=10.0.2.199'
 EXT_NET_GATEWAY='10.0.2.1'
@@ -29,13 +36,10 @@ for i in curl openstack; do
         exit
     fi
 done
-# Move to top level directory
-REAL_PATH=$(python -c "import os,sys;print os.path.realpath('$0')")
-cd "$(dirname "$REAL_PATH")/.."
 
 # Test for credentials set
 if [[ "${OS_USERNAME}" == "" ]]; then
-    echo "No Keystone credentials specified.  Try running source openrc"
+    echo "No Keystone credentials specified. Try running source /etc/kolla/admin-openrc.sh command"
     exit
 fi
 
@@ -45,20 +49,31 @@ if openstack image list | grep -q cirros; then
     exit
 fi
 
-echo Downloading glance image.
-if ! [ -f "${IMAGE}" ]; then
-    curl -L -o ./${IMAGE} ${IMAGE_URL}/${IMAGE}
+echo Checking for locally available cirros image.
+# Let's first try to see if the image is available locally
+# nodepool nodes caches them in $IMAGE_PATH
+if ! [ -f "${IMAGE_PATH}/${IMAGE}" ]; then
+    IMAGE_PATH='./'
+    if ! [ -f "${IMAGE_PATH}/${IMAGE}" ]; then
+        echo None found, downloading cirros image.
+        curl -L -o ${IMAGE_PATH}/${IMAGE} ${IMAGE_URL}/${IMAGE}
+    fi
+else
+    echo Using cached cirros image from the nodepool node.
 fi
+
 echo Creating glance image.
 openstack image create --disk-format qcow2 --container-format bare --public \
-    --property os_type=${IMAGE_TYPE} --file ./${IMAGE} ${IMAGE_NAME}
+    --property os_type=${IMAGE_TYPE} --file ${IMAGE_PATH}/${IMAGE} ${IMAGE_NAME}
 
 echo Configuring neutron.
-openstack network create --external --provider-physical-network physnet1 \
-    --provider-network-type flat public1
-openstack subnet create --no-dhcp \
-    --allocation-pool ${EXT_NET_RANGE} --network public1 \
-    --subnet-range ${EXT_NET_CIDR} --gateway ${EXT_NET_GATEWAY} public1-subnet
+if [[ $ENABLE_EXT_NET -eq 1 ]]; then
+    openstack network create --external --provider-physical-network physnet1 \
+        --provider-network-type flat public1
+    openstack subnet create --no-dhcp \
+        --allocation-pool ${EXT_NET_RANGE} --network public1 \
+        --subnet-range ${EXT_NET_CIDR} --gateway ${EXT_NET_GATEWAY} public1-subnet
+fi
 
 openstack network create --provider-network-type vxlan demo-net
 openstack subnet create --subnet-range 10.0.0.0/24 --network demo-net \
@@ -66,7 +81,9 @@ openstack subnet create --subnet-range 10.0.0.0/24 --network demo-net \
 
 openstack router create demo-router
 openstack router add subnet demo-router demo-subnet
-openstack router set --external-gateway public1 demo-router
+if [[ $ENABLE_EXT_NET -eq 1 ]]; then
+  openstack router set --external-gateway public1 demo-router
+fi
 
 # Get admin user and tenant IDs
 ADMIN_USER_ID=$(openstack user list | awk '/ admin / {print $2}')
@@ -75,7 +92,7 @@ ADMIN_SEC_GROUP=$(openstack security group list --project ${ADMIN_PROJECT_ID} | 
 
 # Sec Group Config
 openstack security group rule create --ingress --ethertype IPv4 \
-    --protocol icmp ${ADMIN_SEC_GROUP} 
+    --protocol icmp ${ADMIN_SEC_GROUP}
 openstack security group rule create --ingress --ethertype IPv4 \
     --protocol tcp --dst-port 22 ${ADMIN_SEC_GROUP}
 # Open heat-cfn so it can run on a different host
@@ -113,8 +130,6 @@ if ! openstack flavor list | grep -q m1.tiny; then
     openstack flavor create --id 5 --ram 16384 --disk 160 --vcpus 8 m1.xlarge
 fi
 
-DEMO_NET_ID=$(openstack network list | awk '/ demo-net / {print $2}')
-
 cat << EOF
 
 Done.
@@ -125,6 +140,6 @@ openstack server create \\
     --image ${IMAGE_NAME} \\
     --flavor m1.tiny \\
     --key-name mykey \\
-    --nic net-id=${DEMO_NET_ID} \\
+    --network demo-net \\
     demo1
 EOF

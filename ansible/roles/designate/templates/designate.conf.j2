@@ -4,21 +4,22 @@ debug = {{ designate_logging_debug }}
 
 log_dir = /var/log/kolla/designate
 
-transport_url = rabbit://{% for host in groups['rabbitmq'] %}{{ rabbitmq_user }}:{{ rabbitmq_password }}@{{ hostvars[host]['ansible_' + hostvars[host]['api_interface']]['ipv4']['address'] }}:{{ rabbitmq_port }}{% if not loop.last %},{% endif %}{% endfor %}
+transport_url = {{ rpc_transport_url }}
 
 [service:central]
 default_pool_id = {{ designate_pool_id }}
 workers = {{ openstack_service_workers }}
 
 [service:api]
-listen = {{ api_interface_address }}:{{ designate_api_port }}
-api_base_uri = {{ internal_protocol }}://{{ kolla_internal_fqdn }}:{{ designate_api_port }}
+listen = {{ api_interface_address }}:{{ designate_api_listen_port }}
+api_base_uri = {{ internal_protocol }}://{{ designate_internal_fqdn }}:{{ designate_api_port }}
 enabled_extensions_v2 = 'quotas, reports'
 workers = {{ openstack_service_workers }}
+enable_host_header = True
 
 [keystone_authtoken]
-auth_uri = {{ internal_protocol }}://{{ kolla_internal_fqdn }}:{{ keystone_public_port }}
-auth_url = {{ admin_protocol }}://{{ kolla_internal_fqdn }}:{{ keystone_admin_port }}
+www_authenticate_uri = {{ keystone_internal_url }}
+auth_url = {{ keystone_admin_url }}
 auth_type = password
 project_domain_id = {{ default_project_domain_id }}
 user_domain_id = {{ default_user_domain_id }}
@@ -49,10 +50,19 @@ enabled = True
 notify = True
 workers = {{ openstack_service_workers }}
 
+[service:producer]
+workers = {{ openstack_service_workers }}
+threads = 1000
+enabled_tasks = None
+export_synchronous = True
+
 [service:pool_manager]
 cache_driver = sqlalchemy
 pool_id = {{ designate_pool_id }}
 workers = {{ openstack_service_workers }}
+
+[network_api:neutron]
+endpoint_type = internalURL
 
 [pool_manager_cache:sqlalchemy]
 connection = mysql+pymysql://{{ designate_pool_manager_database_user }}:{{ designate_pool_manager_database_password }}@{{ designate_pool_manager_database_address }}/{{ designate_pool_manager_database_name }}
@@ -84,21 +94,19 @@ zone_id =
 notification_topics = notifications_designate
 control_exchange = neutron
 formatv4 = '%(octet0)s-%(octet1)s-%(octet2)s-%(octet3)s.%(zone)s'
-formatv4 = '%(hostname)s.%(project)s.%(zone)s'
-formatv4 = '%(hostname)s.%(zone)s'
-formatv6 = '%(hostname)s.%(zone)s'
-formatv6 = '%(hostname)s.%(project)s.%(zone)s'
 
 [oslo_messaging_notifications]
+transport_url = {{ notify_transport_url }}
 topics = notifications_designate
 driver = messagingv2
 
-# TODO (egonzalez): Currently pool update fail when using transport_url.
-# Remove this section after bug https://bugs.launchpad.net/designate/+bug/1673403 is fixed
-[oslo_messaging_rabbit]
-rabbit_userid = {{ rabbitmq_user }}
-rabbit_password = {{ rabbitmq_password }}
-rabbit_hosts = {% for host in groups['rabbitmq'] %}{{ hostvars[host]['ansible_' + hostvars[host]['api_interface']]['ipv4']['address'] }}:{{ rabbitmq_port }}{% if not loop.last %},{% endif %}{% endfor %}
-
 [oslo_concurrency]
 lock_path = /var/lib/designate/tmp
+
+[oslo_middleware]
+enable_proxy_headers_parsing = True
+
+{% if designate_policy_file is defined %}
+[oslo_policy]
+policy_file = {{ designate_policy_file }}
+{% endif %}

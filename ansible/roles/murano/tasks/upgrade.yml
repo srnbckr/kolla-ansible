@@ -1,8 +1,9 @@
 ---
-- include: register.yml
+- include_tasks: config.yml
 
-- include: config.yml
+- include_tasks: bootstrap_service.yml
 
-- include: bootstrap_service.yml
+- name: Flush handlers
+  meta: flush_handlers
 
-- include: start.yml
+- include_tasks: import_library_packages.yml

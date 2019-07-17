@@ -56,13 +56,36 @@ if [[ "$glance_file_datadir_volume" != "glance" && -d "$glance_file_datadir_volu
     rm -rfv  $glance_file_datadir_volume
 fi
 
-echo "Getting folders name..."
+if [[ "$nova_instance_datadir_volume" != "nova_compute" && -d "$nova_instance_datadir_volume" ]]; then
+    echo "Removing nova_compute volume if it is customzied"
+    rm -rfv  $nova_instance_datadir_volume
+fi
+
+if [[ "$elasticsearch_datadir_volume" != "elasticsearch" && -d "$elasticsearch_datadir_volume" ]]; then
+    echo "Removing elasticsearch volume if it is customzied"
+    rm -rfv  $elasticsearch_datadir_volume
+fi
+
+if [[ "$gnocchi_metric_datadir_volume" != "gnocchi" && -d "$gnocchi_metric_datadir_volume" ]]; then
+    echo "Removing gnocchi volume if it is customzied"
+    rm -rfv  $gnocchi_metric_datadir_volume
+fi
+
 FOLDER_PATH="/etc/kolla/"
+
+if [[ -e "$FOLDER_PATH/ovsdpdk-db/ovs-dpdkctl.sh" ]]; then
+    echo uninstalling ovs-dpdk service files and tools.
+    sudo CONFIG_FILE="$FOLDER_PATH/ovsdpdk-db/ovs-dpdkctl.conf" $FOLDER_PATH/ovsdpdk-db/ovs-dpdkctl.sh uninstall
+fi
+
+echo "Getting folders name..."
 for dir in $FOLDER_PATH*; do
     if [ "$dir" == "$FOLDER_PATH""passwords.yml" ] || \
        [ "$dir" == "$FOLDER_PATH""globals.yml" ] || \
        [ "$dir" == "$FOLDER_PATH""kolla-build.conf" ] || \
-       [ "$dir" == "$FOLDER_PATH""config" ]; then
+       [ "$dir" == "$FOLDER_PATH""config" ] || \
+       [ "$dir" == "$FOLDER_PATH""kolla-cli" ] || \
+       [ "$dir" == "$FOLDER_PATH""certificates" ]; then
         echo "Skipping:" $dir
     else
         rm -rfv $dir

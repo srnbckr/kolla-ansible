@@ -1,5 +1,9 @@
-{% set python_path = '/usr/lib/python2.7/site-packages' if kolla_install_type == 'binary' else '/var/lib/kolla/venv/lib/python2.7/site-packages' %}
+{% set python_path = '/usr/lib/python2.7/site-packages' if zun_install_type == 'binary' else '/var/lib/kolla/venv/lib/python2.7/site-packages' %}
 Listen {{ api_interface_address }}:{{ zun_api_port }}
+
+ServerSignature Off
+ServerTokens Prod
+TraceEnable off
 
 <VirtualHost *:{{ zun_api_port }}>
 
@@ -17,7 +21,8 @@ Listen {{ api_interface_address }}:{{ zun_api_port }}
   ## Logging
   ErrorLog "/var/log/kolla/zun/zun_api_wsgi_error.log"
   ServerSignature Off
-  CustomLog "/var/log/kolla/zun/zun_api_wsgi_access.log" combined
+  LogFormat "%{X-Forwarded-For}i %l %u %t \"%r\" %>s %b %D \"%{Referer}i\" \"%{User-Agent}i\"" logformat
+  CustomLog "/var/log/kolla/zun/zun_api_wsgi_access.log" logformat
   WSGIApplicationGroup %{GLOBAL}
   WSGIDaemonProcess zun group=zun processes={{ openstack_service_workers }} threads=1 user=zun python-path={{ python_path }}
   WSGIProcessGroup zun

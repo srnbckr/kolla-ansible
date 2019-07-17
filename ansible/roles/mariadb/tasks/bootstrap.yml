@@ -1,10 +1,13 @@
 ---
-- include: lookup_cluster.yml
+- set_fact:
+    master_host: "{{ groups['mariadb'][0] }}"
 
-- include: bootstrap_cluster.yml
+- include_tasks: lookup_cluster.yml
+
+- include_tasks: bootstrap_cluster.yml
   when:
-    - delegate_host == 'None'
+    - not has_cluster | bool
     - inventory_hostname == groups['mariadb'][0]
 
-- include: recover_cluster.yml
+- include_tasks: recover_cluster.yml
   when: mariadb_recover | default(False)

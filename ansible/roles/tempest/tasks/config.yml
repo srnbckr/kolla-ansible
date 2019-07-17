@@ -3,7 +3,10 @@
   file:
     path: "{{ node_config_directory }}/{{ item.key }}"
     state: "directory"
-    recurse: yes
+    owner: "{{ config_owner_user }}"
+    group: "{{ config_owner_group }}"
+    mode: "0770"
+  become: true
   when:
     - inventory_hostname in groups[item.value.group]
     - item.value.enabled | bool
@@ -13,7 +16,8 @@
   template:
     src: "{{ item.key }}.json.j2"
     dest: "{{ node_config_directory }}/{{ item.key }}/config.json"
-  register: tempest_config_jsons
+    mode: "0660"
+  become: true
   when:
     - inventory_hostname in groups[item.value.group]
     - item.value.enabled | bool
@@ -29,7 +33,8 @@
       - "{{ role_path }}/templates/tempest.conf.j2"
       - "{{ node_custom_config }}/tempest.conf"
     dest: "{{ node_config_directory }}/{{ item.key }}/tempest.conf"
-  register: tempest_confs
+    mode: "0660"
+  become: true
   when:
     - inventory_hostname in groups[item.value.group]
     - item.value.enabled | bool
@@ -38,15 +43,16 @@
     - Restart tempest container
 
 - name: Check tempest containers
+  become: true
   kolla_docker:
     action: "compare_container"
     common_options: "{{ docker_common_options }}"
     name: "{{ item.value.container_name }}"
     image: "{{ item.value.image }}"
     volumes: "{{ item.value.volumes }}"
-  register: check_tempest_containers
+    dimensions: "{{ item.value.dimensions }}"
   when:
-    - action != "config"
+    - kolla_action != "config"
     - inventory_hostname in groups[item.value.group]
     - item.value.enabled | bool
   with_dict: "{{ tempest_services }}"

@@ -1,5 +1,6 @@
 ---
 - name: Get container facts
+  become: true
   kolla_container_facts:
     name:
       - aodh_api
@@ -8,7 +9,7 @@
 - name: Checking free port for Aodh API
   wait_for:
     host: "{{ api_interface_address }}"
-    port: "{{ aodh_api_port }}"
+    port: "{{ aodh_api_listen_port }}"
     connect_timeout: 1
     timeout: 1
     state: stopped

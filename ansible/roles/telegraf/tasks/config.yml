@@ -3,7 +3,10 @@
   file:
     path: "{{ node_config_directory }}/{{ item.key }}/config"
     state: "directory"
-    recurse: yes
+    owner: "{{ config_owner_user }}"
+    group: "{{ config_owner_group }}"
+    mode: "0770"
+  become: true
   when:
     - inventory_hostname in groups[item.value.group]
     - item.value.enabled | bool
@@ -13,7 +16,8 @@
   template:
     src: "telegraf.json.j2"
     dest: "{{ node_config_directory }}/telegraf/config.json"
-  register: telegraf_config_jsons
+    mode: "0660"
+  become: true
   when:
     - inventory_hostname in groups[item.value.group]
     - item.value.enabled | bool
@@ -25,12 +29,17 @@
   vars:
     service: "{{ telegraf_services['telegraf'] }}"
   template:
-    src: "telegraf.conf.j2"
+    src: "{{ item }}"
     dest: "{{ node_config_directory }}/telegraf/telegraf.conf"
-  register: telegraf_confs
+    mode: "0660"
+  become: true
   when:
     - inventory_hostname in groups[service.group]
     - service.enabled | bool
+  with_first_found:
+    - "{{ node_custom_config }}/telegraf/{{ inventory_hostname }}/telegraf.conf"
+    - "{{ node_custom_config }}/telegraf/telegraf.conf"
+    - "telegraf.conf.j2"
   notify:
     - Restart telegraf container
 
@@ -40,7 +49,8 @@
   copy:
     src: "{{ item }}"
     dest: "{{ node_config_directory }}/telegraf/config"
-  register: telegraf_plugin
+    mode: "0660"
+  become: true
   when:
     - inventory_hostname in groups[service.group]
     - item.value.enabled | bool
@@ -50,6 +60,7 @@
     - Restart telegraf container
 
 - name: Check telegraf containers
+  become: true
   kolla_docker:
     action: "compare_container"
     common_options: "{{ docker_common_options }}"
@@ -57,9 +68,9 @@
     image: "{{ item.value.image }}"
     volumes: "{{ item.value.volumes }}"
     pid_mode: "{{ item.value.pid_mode }}"
-  register: check_telegraf_containers
+    dimensions: "{{ item.value.dimensions }}"
   when:
-    - action != "config"
+    - kolla_action != "config"
     - inventory_hostname in groups[item.value.group]
     - item.value.enabled | bool
   with_dict: "{{ telegraf_services }}"

@@ -2,6 +2,7 @@
 - name: Running Senlin bootstrap container
   vars:
     senlin_api: "{{ senlin_services['senlin-api'] }}"
+  become: true
   kolla_docker:
     action: "start_container"
     common_options: "{{ docker_common_options }}"
@@ -14,6 +15,6 @@
       BOOTSTRAP:
     name: "bootstrap_senlin"
     restart_policy: "never"
-    volumes: "{{ senlin_api.volumes }}"
+    volumes: "{{ senlin_api.volumes|reject('equalto', '')|list }}"
   run_once: True
   delegate_to: "{{ groups[senlin_api.group][0] }}"

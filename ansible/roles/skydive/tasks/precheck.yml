@@ -1,5 +1,6 @@
 ---
 - name: Get container facts
+  become: true
   kolla_container_facts:
     name:
       - skydive_analyzer
@@ -31,4 +32,3 @@
     - container_facts['skydive_agent'] is not defined
     - inventory_hostname in groups[skydive_agent.group]
     - skydive_agent.enabled | bool
-

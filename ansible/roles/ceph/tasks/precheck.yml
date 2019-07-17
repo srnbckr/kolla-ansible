@@ -1,5 +1,6 @@
 ---
 - name: Get container facts
+  become: true
   kolla_container_facts:
     name:
       - ceph_rgw
@@ -13,5 +14,10 @@
     timeout: 1
     state: stopped
   when:
-    - container_facts['ceph-rgw'] is not defined
+    - container_facts['ceph_rgw'] is not defined
     - inventory_hostname in groups['ceph-rgw']
+
+- name: Check whether the Swift service is enabled
+  local_action: fail msg='Ceph-rgw conflicts with Swift, and so you should only enable one of them'
+  when: enable_swift | bool and enable_ceph_rgw | bool
+  run_once: True

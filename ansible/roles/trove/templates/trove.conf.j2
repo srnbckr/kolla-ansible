@@ -10,38 +10,41 @@ bind_host = {{ api_interface_address }}
 trove_api_workers = {{ openstack_service_workers }}
 auth_strategy = keystone
 
-transport_url = rabbit://{% for host in groups['rabbitmq'] %}{{ rabbitmq_user }}:{{ rabbitmq_password }}@{{ hostvars[host]['ansible_' + hostvars[host]['api_interface']]['ipv4']['address'] }}:{{ rabbitmq_port }}{% if not loop.last %},{% endif %}{% endfor %}
+transport_url = {{ rpc_transport_url }}
 
-trove_auth_url = {{ internal_protocol }}://{{ kolla_internal_fqdn }}:{{ keystone_public_port }}/v3
-{% if enable_nova | bool %}
-nova_compute_url = {{ internal_protocol }}://{{ kolla_internal_fqdn }}:{{ nova_api_port }}/v2
-{% endif %}
-{% if enable_cinder | bool %}
-cinder_url = {{ internal_protocol }}://{{ kolla_internal_fqdn }}:{{ cinder_api_port }}/v1
-{% endif %}
-{% if enable_swift | bool %}
-swift_url = {{ internal_protocol }}://{{ kolla_internal_fqdn }}:{{ swift_proxy_server_port }}/v1/AUTH_
-{% elif enable_ceph_rgw_keystone | bool %}
-swift_url = {{ internal_protocol }}://{{ kolla_internal_fqdn }}:{{ rgw_port }}/v1/AUTH_
-{% endif %}
+trove_auth_url = {{ keystone_internal_url }}/v3
+
+os_region_name = {{ openstack_region_name }}
+
+nova_compute_endpoint_type = internalURL
+neutron_endpoint_type = internalURL
+cinder_endpoint_type = internalURL
+swift_endpoint_type = internalURL
+glance_endpoint_type = internalURL
+trove_endpoint_type = internalURL
+
+network_driver = trove.network.neutron.NeutronDriver
+
+network_label_regex = .*
 
 [database]
 connection = mysql+pymysql://{{ trove_database_user }}:{{ trove_database_password }}@{{ trove_database_address }}/{{ trove_database_name }}
 
 [keystone_authtoken]
-auth_uri = {{ internal_protocol }}://{{ kolla_internal_fqdn }}:{{ keystone_public_port }}
+www_authenticate_uri = {{ keystone_internal_url }}
 project_domain_name = {{ default_project_domain_name }}
 project_name = service
 user_domain_name = {{ default_user_domain_name }}
 username = {{ trove_keystone_user }}
 password = {{ trove_keystone_password }}
-auth_url = {{ admin_protocol }}://{{ kolla_internal_fqdn }}:{{ keystone_admin_port }}
+auth_url = {{ keystone_admin_url }}
 auth_type = password
 
 [oslo_messaging_notifications]
+transport_url = {{ notify_transport_url }}
 {% if enable_ceilometer | bool %}
 driver = messagingv2
-topics = 'notifications'
+topics = notifications
 {% else %}
 driver = noop
 {% endif %}
@@ -51,7 +54,10 @@ driver = noop
 enabled = true
 trace_sqlalchemy = true
 hmac_keys = {{ osprofiler_secret }}
-{% if enable_elasticsearch | bool %}
-connection_string = elasticsearch://{{ elasticsearch_address }}:{{ elasticsearch_port }}
+connection_string = {{ osprofiler_backend_connection_string }}
 {% endif %}
+
+{% if trove_policy_file is defined %}
+[oslo_policy]
+policy_file = {{ trove_policy_file }}
 {% endif %}

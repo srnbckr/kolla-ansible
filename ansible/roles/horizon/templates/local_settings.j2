@@ -87,7 +87,23 @@ OPENSTACK_API_VERSIONS = {
 # Set this to True if running on a multi-domain model. When this is enabled, it
 # will require the user to enter the Domain name in addition to the username
 # for login.
-#OPENSTACK_KEYSTONE_MULTIDOMAIN_SUPPORT = False
+OPENSTACK_KEYSTONE_MULTIDOMAIN_SUPPORT = {{ horizon_keystone_multidomain | bool }}
+
+# Set this to True if you want available domains displayed as a dropdown menu
+# on the login screen. It is strongly advised NOT to enable this for public
+# clouds, as advertising enabled domains to unauthenticated customers
+# irresponsibly exposes private information. This should only be used for
+# private clouds where the dashboard sits behind a corporate firewall.
+OPENSTACK_KEYSTONE_DOMAIN_DROPDOWN = {{ 'True' if horizon_keystone_domain_choices|length > 1 else 'False' }}
+
+# If OPENSTACK_KEYSTONE_DOMAIN_DROPDOWN is enabled, this option can be used to
+# set the available domains to choose from. This is a list of pairs whose first
+# value is the domain name and the second is the display name.
+OPENSTACK_KEYSTONE_DOMAIN_CHOICES = (
+{% for key, value in horizon_keystone_domain_choices.items() %}
+    ('{{ key }}', '{{ value }}'),
+{% endfor %}
+)
 
 # Overrides the default domain used when running on single-domain model
 # with Keystone V3. All entities will be created in the default domain.
@@ -163,12 +179,7 @@ SESSION_ENGINE = 'django.contrib.sessions.backends.cache'
 CACHES = {
     'default': {
         'BACKEND': 'django.core.cache.backends.memcached.MemcachedCache',
-
-{% if orchestration_engine == 'KUBERNETES' %}
-        'LOCATION': '{{ memcached_servers }}'
-{% else %}
         'LOCATION': [{% for host in groups['memcached'] %}'{{ hostvars[host]['ansible_' + hostvars[host]['api_interface']]['ipv4']['address'] }}:{{ memcached_port }}'{% if not loop.last %},{% endif %}{% endfor %}]
-{%- endif %}
     }
 }
 {% endif %}
@@ -193,9 +204,9 @@ AVAILABLE_REGIONS = [
 ]
 {% endif %}
 
-OPENSTACK_HOST = "{% if orchestration_engine == 'KUBERNETES' %}{{ api_interface_address }}{% else %}{{ kolla_internal_fqdn }}{% endif %}"
+OPENSTACK_HOST = "{{ kolla_internal_fqdn }}"
 
-OPENSTACK_KEYSTONE_URL = "{{ keystone_internal_url }}"
+OPENSTACK_KEYSTONE_URL = "{{ horizon_keystone_url }}"
 OPENSTACK_KEYSTONE_DEFAULT_ROLE = "{{ keystone_default_user_role }}"
 
 # Enables keystone web single-sign-on if set to True.
@@ -292,7 +303,7 @@ OPENSTACK_HYPERVISOR_FEATURES = {
 # The OPENSTACK_CINDER_FEATURES settings can be used to enable optional
 # services provided by cinder that is not exposed by its extension API.
 OPENSTACK_CINDER_FEATURES = {
-    'enable_backup': True,
+    'enable_backup': {{ 'True' if enable_cinder_backup | bool else 'False' }},
 }
 
 # The OPENSTACK_NEUTRON_NETWORK settings can be used to enable optional
@@ -466,7 +477,7 @@ POLICY_FILES_PATH = '/etc/openstack-dashboard'
 # in the Keystone v3 multi-domain case, policy.v3cloudsample.json.
 # This file is not included in the Horizon repository by default but can be
 # found at
-# http://git.openstack.org/cgit/openstack/keystone/tree/etc/ \
+# http://opendev.org/openstack/keystone/tree/etc/ \
 # policy.v3cloudsample.json
 # Having matching policy files on the Horizon and Keystone servers is essential
 # for normal operation. This holds true for all services and their policy files.
@@ -739,7 +750,7 @@ SECURITY_GROUP_RULES = {
 #  $glance --os-image-api-version 2 help md-namespace-import
 #  $glance-manage db_load_metadefs <directory_with_definition_files>
 #
-# See Metadata Definitions on: http://docs.openstack.org/developer/glance/
+# See Metadata Definitions on: https://docs.openstack.org/glance/latest/
 
 # TODO: (david-lyle) remove when plugins support settings natively
 # Note: This is only used when the Sahara plugin is configured and enabled
@@ -819,3 +830,17 @@ REST_API_REQUIRED_SETTINGS = ['OPENSTACK_HYPERVISOR_FEATURES',
 # before loading any data into the admin views, set the following attribute to
 # True
 #ADMIN_FILTER_DATA_FIRST=False
+
+{% if enable_murano | bool and enable_barbican | bool %}
+KEY_MANAGER = {
+        'auth_url': '{{ keystone_internal_url }}/v3',
+        'username': '{{ murano_keystone_user }}',
+        'user_domain_name': '{{ default_project_domain_name }}',
+        'password': '{{ murano_keystone_password }}',
+        'project_name': 'service',
+        'project_domain_name': '{{ default_project_domain_name }}'
+}
+{% endif %}
+
+# Allow operators to overwrite variables (LP: #1769970).
+from custom_local_settings import *

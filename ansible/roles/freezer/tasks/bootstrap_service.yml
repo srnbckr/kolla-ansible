@@ -2,6 +2,7 @@
 - name: Running Freezer bootstrap container
   vars:
     freezer_api: "{{ freezer_services['freezer-api'] }}"
+  become: true
   kolla_docker:
     action: "start_container"
     common_options: "{{ docker_common_options }}"
@@ -14,6 +15,6 @@
       BOOTSTRAP:
     name: "bootstrap_freezer"
     restart_policy: "never"
-    volumes: "{{ freezer_api.volumes }}"
+    volumes: "{{ freezer_api.volumes | reject('equalto', '') | list }}"
   run_once: True
   delegate_to: "{{ groups[freezer_api.group][0] }}"

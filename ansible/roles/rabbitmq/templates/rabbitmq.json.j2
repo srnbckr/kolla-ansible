@@ -8,14 +8,8 @@
             "perm": "0600"
         },
         {
-            "source": "{{ container_config_directory }}/rabbitmq.config",
-            "dest": "/etc/rabbitmq/rabbitmq.config",
-            "owner": "rabbitmq",
-            "perm": "0600"
-        },
-        {
-            "source": "{{ container_config_directory }}/rabbitmq-clusterer.config",
-            "dest": "/etc/rabbitmq/rabbitmq-clusterer.config",
+            "source": "{{ container_config_directory }}/rabbitmq.conf",
+            "dest": "/etc/rabbitmq/rabbitmq.conf",
             "owner": "rabbitmq",
             "perm": "0600"
         },

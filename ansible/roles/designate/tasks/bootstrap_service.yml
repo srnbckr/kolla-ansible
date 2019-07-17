@@ -2,6 +2,7 @@
 - name: Running Designate bootstrap container
   vars:
     designate_central: "{{ designate_services['designate-central'] }}"
+  become: true
   kolla_docker:
     action: "start_container"
     common_options: "{{ docker_common_options }}"
@@ -14,6 +15,6 @@
       BOOTSTRAP:
     name: "bootstrap_designate"
     restart_policy: "never"
-    volumes: "{{ designate_central.volumes }}"
+    volumes: "{{ designate_central.volumes|reject('equalto', '')|list }}"
   run_once: True
   delegate_to: "{{ groups[designate_central.group][0] }}"

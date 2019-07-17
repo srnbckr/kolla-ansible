@@ -1,5 +1,6 @@
 ---
 - name: Get container facts
+  become: true
   kolla_container_facts:
     name:
       - neutron_server
@@ -8,7 +9,7 @@
 - name: Checking free port for Neutron Server
   wait_for:
     host: "{{ api_interface_address }}"
-    port: "{{ neutron_server_port }}"
+    port: "{{ neutron_server_listen_port }}"
     connect_timeout: 1
     timeout: 1
     state: stopped
@@ -27,11 +28,14 @@
 
 # When MountFlags is set to shared, a signal bit configured on 20th bit of a number
 # We need to check the 20th bit. 2^20 = 1048576. So we are validating against it.
+# In some systems MountFlags on the Docker service is set to 'shared', whereas
+# in others it's set to the decimal value of the 20th bit. This now checks for both
+# values. Either '1048576' or 'shared' will pass the precheck.
 - name: Checking if 'MountFlags' for docker service is set to 'shared'
   command: systemctl show docker
   register: result
   changed_when: false
-  failed_when: result.stdout.find('MountFlags=1048576') == -1
+  failed_when: result.stdout.find('MountFlags=1048576') == -1 and result.stdout.find('MountFlags=shared') == -1
   when:
     - (inventory_hostname in groups['neutron-dhcp-agent']
        or inventory_hostname in groups['neutron-l3-agent']
@@ -47,3 +51,11 @@
   when: item not in type_drivers
   run_once: true
   with_items: "{{ tenant_network_types }}"
+
+- name: Checking whether Ironic enabled
+  local_action: fail msg="Ironic must be enabled when using networking-baremetal/ironic-neutron-agent"
+  changed_when: false
+  run_once: True
+  when:
+    - enable_ironic_neutron_agent | bool
+    - not (enable_ironic | bool)

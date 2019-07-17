@@ -1,8 +1,5 @@
-{%- set wsrep_driver = '/usr/lib/galera/libgalera_smm.so' if kolla_base_distro == 'ubuntu' else '/usr/lib64/galera/libgalera_smm.so' %}
-
-{#- Disable Galera in the case of of Kubernetes as its not supported yet.  Otherwise, #}
-{#- mariadb will fail to start #}
-{%- set wsrep_driver = 'none' if orchestration_engine == 'KUBERNETES' else wsrep_driver %}
+{%- set wsrep_driver = '/usr/lib/galera/libgalera_smm.so' if kolla_base_distro in ['debian', 'ubuntu'] else '/usr/lib64/galera/libgalera_smm.so' %}
+{% set sst_method = 'mariabackup' %}
 
 [client]
 default-character-set=utf8
@@ -11,6 +8,7 @@ default-character-set=utf8
 default-character-set=utf8
 
 [mysqld]
+basedir=/usr
 bind-address={{ api_interface_address }}
 port={{ mariadb_port }}
 
@@ -18,6 +16,7 @@ log-error=/var/log/kolla/mariadb/mariadb.log
 
 log-bin=mysql-bin
 binlog_format=ROW
+expire_logs_days=14
 default-storage-engine=innodb
 innodb_autoinc_lock_mode=2
 
@@ -37,10 +36,11 @@ wsrep_sst_receive_address={{ api_interface_address }}:{{ mariadb_sst_port }}
 wsrep_provider={{ wsrep_driver }}
 wsrep_cluster_name="{{ database_cluster_name }}"
 wsrep_node_name={{ ansible_hostname }}
-wsrep_sst_method=xtrabackup-v2
+wsrep_sst_method={{ sst_method }}
 wsrep_sst_auth={{ database_user }}:{{ database_password }}
 wsrep_slave_threads=4
 wsrep_notify_cmd=/usr/local/bin/wsrep-notify.sh
+wsrep_on = ON
 
 max_connections=10000
 
@@ -53,6 +53,11 @@ innodb_buffer_pool_size = '{{ dynamic_pool_size_mb }}M'
 {% else %}
 innodb_buffer_pool_size = '8192M'
 {% endif %}
+
+# The default value for innodb_lock_schedule_algorithm is VATS, but this does
+# not work with galera. Set FCFS explicitly to avoid a warning.
+# https://mariadb.com/kb/en/library/innodb-system-variables/#innodb_lock_schedule_algorithm.
+innodb_lock_schedule_algorithm = FCFS
 
 [server]
 pid-file=/var/lib/mysql/mariadb.pid

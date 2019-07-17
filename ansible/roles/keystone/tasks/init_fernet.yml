@@ -1,5 +1,16 @@
 ---
+- name: Waiting for Keystone SSH port to be UP
+  wait_for:
+    host: "{{ api_interface_address }}"
+    port: "{{ keystone_ssh_port }}"
+    connect_timeout: 1
+  register: check_keystone_ssh_port
+  until: check_keystone_ssh_port is success
+  retries: 10
+  delay: 5
+
 - name: Initialise fernet key authentication
+  become: true
   command: "docker exec -t keystone_fernet kolla_keystone_bootstrap {{ keystone_username }} {{ keystone_groupname }}"
   register: fernet_create
   changed_when: fernet_create.stdout.find('localhost | SUCCESS => ') != -1 and (fernet_create.stdout.split('localhost | SUCCESS => ')[1]|from_json).changed
@@ -10,6 +21,7 @@
   delegate_to: "{{ groups['keystone'][0] }}"
 
 - name: Run key distribution
-  command: docker exec -t keystone_fernet /usr/bin/fernet-rotate.sh
+  become: true
+  command: docker exec -t keystone_fernet /usr/bin/fernet-push.sh
   run_once: True
   delegate_to: "{{ groups['keystone'][0] }}"

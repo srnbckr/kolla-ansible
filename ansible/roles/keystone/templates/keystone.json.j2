@@ -20,16 +20,15 @@
             "source": "{{ container_config_directory }}/domains",
             "dest": "/etc/keystone/domains",
             "owner": "keystone",
-            "perm": "0700",
-            "optional": true
-        },
-        {
-            "source": "{{ container_config_directory }}/policy.json",
-            "dest": "/etc/keystone/policy.json",
-            "owner": "keystone",
             "perm": "0600",
             "optional": true
-        },
+        }{% if keystone_policy_file is defined %},
+        {
+            "source": "{{ container_config_directory }}/{{ keystone_policy_file }}",
+            "dest": "/etc/keystone/{{ keystone_policy_file }}",
+            "owner": "keystone",
+            "perm": "0600"
+        }{% endif %},
         {
             "source": "{{ container_config_directory }}/wsgi-keystone.conf",
             "dest": "/etc/{{ keystone_dir }}/wsgi-keystone.conf",
@@ -45,6 +44,16 @@
         {
             "path": "/var/log/kolla/keystone/keystone.log",
             "owner": "keystone:keystone"
+        },
+        {
+            "path": "/etc/keystone/fernet-keys",
+            "owner": "keystone:keystone",
+            "perm": "0770"
+        },
+        {
+            "path": "/etc/keystone/domains",
+            "owner": "keystone:keystone",
+            "perm": "0700"
         }
     ]
 }

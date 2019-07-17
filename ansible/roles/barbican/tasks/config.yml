@@ -1,19 +1,56 @@
 ---
 - name: Ensuring config directories exist
   file:
+    path: "{{ node_config_directory }}/{{ item.key }}"
+    state: "directory"
+    owner: "{{ config_owner_user }}"
+    group: "{{ config_owner_group }}"
+    mode: "0770"
+  become: true
+  when:
+    - inventory_hostname in groups[item.value.group]
+    - item.value.enabled | bool
+  with_dict: "{{ barbican_services }}"
+
+- name: Ensuring vassals config directories exist
+  vars:
+    service: "{{ barbican_services['barbican-api'] }}"
+  file:
     path: "{{ node_config_directory }}/{{ item }}"
     state: "directory"
-    recurse: yes
+    owner: "{{ config_owner_user }}"
+    group: "{{ config_owner_group }}"
+    mode: "0770"
+  become: true
+  when:
+    - inventory_hostname in groups[service.group]
+    - service.enabled | bool
   with_items:
     - "barbican-api/vassals"
-    - "barbican-keystone-listener"
-    - "barbican-worker"
+
+- name: Check if policies shall be overwritten
+  local_action: stat path="{{ item }}"
+  run_once: True
+  register: barbican_policy
+  with_first_found:
+    - files: "{{ supported_policy_format_list }}"
+      paths:
+        - "{{ node_custom_config }}/barbican/"
+      skip: true
+
+- name: Set barbican policy file
+  set_fact:
+    barbican_policy_file: "{{ barbican_policy.results.0.stat.path | basename }}"
+    barbican_policy_file_path: "{{ barbican_policy.results.0.stat.path }}"
+  when:
+    - barbican_policy.results
 
 - name: Copying over config.json files for services
   template:
     src: "{{ item.key }}.json.j2"
     dest: "{{ node_config_directory }}/{{ item.key }}/config.json"
-  register: barbican_config_jsons
+    mode: "0660"
+  become: true
   when:
     - inventory_hostname in groups[item.value.group]
     - item.value.enabled | bool
@@ -30,9 +67,10 @@
       - "{{ node_custom_config }}/barbican-api/barbican-api.ini"
       - "{{ node_custom_config }}/barbican-api/{{ inventory_hostname }}/barbican-api.ini"
     dest: "{{ node_config_directory }}/barbican-api/vassals/barbican-api.ini"
-  register: barbican_api_ini
+    mode: "0660"
+  become: true
   when:
-    - inventory_hostname in groups['barbican-api']
+    - inventory_hostname in groups[service.group]
     - service.enabled | bool
   notify:
     - Restart barbican-api container
@@ -44,6 +82,7 @@
   run_once: True
   register: check_barbican_api_paste_ini
   when:
+    - inventory_hostname in groups[service.group]
     - service.enabled | bool
 
 - name: Copying over barbican-api-paste.ini
@@ -52,11 +91,12 @@
   template:
     src: "{{ node_custom_config }}/barbican/barbican-api-paste.ini"
     dest: "{{ node_config_directory }}/barbican-api/barbican-api-paste.ini"
+    mode: "0660"
+  become: true
   when:
-    - inventory_hostname in groups['barbican-api']
+    - inventory_hostname in groups[service.group]
     - service.enabled | bool
     - check_barbican_api_paste_ini.stat.exists
-  register: barbican_api_paste
   notify:
     - Restart barbican-api container
 
@@ -67,13 +107,12 @@
     sources:
       - "{{ role_path }}/templates/barbican.conf.j2"
       - "{{ node_custom_config }}/global.conf"
-      - "{{ node_custom_config }}/database.conf"
-      - "{{ node_custom_config }}/messaging.conf"
       - "{{ node_custom_config }}/barbican.conf"
       - "{{ node_custom_config }}/barbican/{{ item.key }}.conf"
       - "{{ node_custom_config }}/barbican/{{ inventory_hostname }}/barbican.conf"
     dest: "{{ node_config_directory }}/{{ item.key }}/barbican.conf"
-  register: barbican_confs
+    mode: "0660"
+  become: true
   when:
     - item.value.enabled | bool
     - inventory_hostname in groups[item.value.group]
@@ -81,18 +120,14 @@
   notify:
     - Restart {{ item.key }} container
 
-- name: Check if policies shall be overwritten
-  local_action: stat path="{{ node_custom_config }}/barbican/policy.json"
-  run_once: True
-  register: barbican_policy
-
-- name: Copying over existing policy.json
+- name: Copying over existing policy file
   template:
-    src: "{{ node_custom_config }}/barbican/policy.json"
-    dest: "{{ node_config_directory }}/{{ item.key }}/policy.json"
-  register: barbican_policy_jsons
+    src: "{{ barbican_policy_file_path }}"
+    dest: "{{ node_config_directory }}/{{ item.key }}/{{ barbican_policy_file }}"
+    mode: "0660"
+  become: true
   when:
-    - barbican_policy.stat.exists
+    - barbican_policy_file is defined
     - inventory_hostname in groups[item.value.group]
     - item.value.enabled | bool
   with_dict: "{{ barbican_services }}"
@@ -100,15 +135,16 @@
     - Restart {{ item.key }} container
 
 - name: Check barbican containers
+  become: true
   kolla_docker:
     action: "compare_container"
     common_options: "{{ docker_common_options }}"
     name: "{{ item.value.container_name }}"
     image: "{{ item.value.image }}"
-    volumes: "{{ item.value.volumes }}"
-  register: check_barbican_containers
+    volumes: "{{ item.value.volumes|reject('equalto', '')|list }}"
+    dimensions: "{{ item.value.dimensions }}"
   when:
-    - action != "config"
+    - kolla_action != "config"
     - inventory_hostname in groups[item.value.group]
     - item.value.enabled | bool
   with_dict: "{{ barbican_services }}"

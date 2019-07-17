@@ -1,5 +1,6 @@
 ---
 - name: Creating the Solum image builder service and endpoint
+  become: true
   kolla_toolbox:
     module_name: "kolla_keystone_service"
     module_args:
@@ -10,9 +11,8 @@
       url: "{{ item.url }}"
       interface: "{{ item.interface }}"
       region_name: "{{ openstack_region_name }}"
-      auth: "{{ '{{ openstack_solum_auth }}' }}"
-    module_extra_vars:
-      openstack_solum_auth: "{{ openstack_solum_auth }}"
+      auth: "{{ openstack_solum_auth }}"
+      endpoint_type: "{{ openstack_interface }}"
   run_once: True
   with_items:
     - {'interface': 'admin', 'url': '{{ solum_image_builder_admin_endpoint }}'}
@@ -20,6 +20,7 @@
     - {'interface': 'public', 'url': '{{ solum_image_builder_public_endpoint }}'}
 
 - name: Creating the Solum application deployment service and endpoint
+  become: true
   kolla_toolbox:
     module_name: "kolla_keystone_service"
     module_args:
@@ -30,9 +31,8 @@
       url: "{{ item.url }}"
       interface: "{{ item.interface }}"
       region_name: "{{ openstack_region_name }}"
-      auth: "{{ '{{ openstack_solum_auth }}' }}"
-    module_extra_vars:
-      openstack_solum_auth: "{{ openstack_solum_auth }}"
+      auth: "{{ openstack_solum_auth }}"
+      endpoint_type: "{{ openstack_interface }}"
   run_once: True
   with_items:
     - {'interface': 'admin', 'url': '{{ solum_application_deployment_admin_endpoint }}'}
@@ -40,6 +40,7 @@
     - {'interface': 'public', 'url': '{{ solum_application_deployment_public_endpoint }}'}
 
 - name: Creating the Solum project, user, and role
+  become: true
   kolla_toolbox:
     module_name: "kolla_keystone_user"
     module_args:
@@ -48,7 +49,6 @@
       password: "{{ solum_keystone_password }}"
       role: "admin"
       region_name: "{{ openstack_region_name }}"
-      auth: "{{ '{{ openstack_solum_auth }}' }}"
-    module_extra_vars:
-      openstack_solum_auth: "{{ openstack_solum_auth }}"
+      auth: "{{ openstack_solum_auth }}"
+      endpoint_type: "{{ openstack_interface }}"
   run_once: True

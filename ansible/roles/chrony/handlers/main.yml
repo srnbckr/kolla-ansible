@@ -3,6 +3,7 @@
   vars:
     service_name: "chrony"
     service: "{{ chrony_services[service_name] }}"
+  become: true
   kolla_docker:
     action: "recreate_or_restart_container"
     common_options: "{{ docker_common_options }}"
@@ -10,7 +11,6 @@
     name: "{{ service.container_name }}"
     image: "{{ service.image }}"
     volumes: "{{ service.volumes }}"
+    dimensions: "{{ service.dimensions }}"
   when:
-    - action != "config"
-    - inventory_hostname in groups[service.group]
-    - service.enabled | bool
+    - kolla_action != "config"

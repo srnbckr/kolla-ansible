@@ -3,31 +3,41 @@
   file:
     path: "{{ node_config_directory }}/{{ item }}"
     state: "directory"
-    recurse: yes
+    owner: "{{ config_owner_user }}"
+    group: "{{ config_owner_group }}"
+    mode: "0770"
+  become: true
   with_items:
     - "memcached"
 
 - name: Copying over config.json files for services
+  vars:
+    service: "{{ memcached_services.memcached }}"
   template:
     src: "{{ item }}.json.j2"
     dest: "{{ node_config_directory }}/{{ item }}/config.json"
-  register: memcached_config_json
+    mode: "0660"
+  become: true
   with_items:
     - "memcached"
+  when:
+    - inventory_hostname in groups[service.group]
+    - service.enabled | bool
   notify: Restart memcached container
 
 - name: Check memcached container
   vars:
     service: "{{ memcached_services.memcached }}"
+  become: true
   kolla_docker:
     action: "compare_container"
     common_options: "{{ docker_common_options }}"
     name: "{{ service.container_name }}"
     image: "{{ service.image }}"
     volumes: "{{ service.volumes }}"
-  register: check_memcached_container
+    dimensions: "{{ service.dimensions }}"
   when:
+    - kolla_action != "config"
     - inventory_hostname in groups[service.group]
     - service.enabled | bool
-    - action != "config"
   notify: Restart memcached container

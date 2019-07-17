@@ -1,89 +1,69 @@
+{% if kolla_base_distro in ['ubuntu', 'debian'] and ansible_architecture == 'x86_64' %}
+    {% set fluentd_cmd = '/usr/sbin/td-agent' %}
+    {% set fluentd_dir = '/etc/td-agent' %}
+    {% set fluentd_conf = 'td-agent.conf' %}
+    {% set fluentd_user = 'td-agent' %}
+{% else %}
+    {% if kolla_base_distro in ['ubuntu', 'debian'] %}
+        {% set fluentd_cmd = '/usr/local/bin/fluentd -c /etc/fluentd/fluent.conf' %}
+    {% else %}
+        {% set fluentd_cmd = '/usr/bin/fluentd -c /etc/fluentd/fluent.conf' %}
+    {% endif %}
+    {% set fluentd_dir = '/etc/fluentd' %}
+    {% set fluentd_conf = 'fluent.conf' %}
+    {% set fluentd_user = 'fluentd' %}
+{% endif %}
 {
-    "command": "/usr/sbin/td-agent",
+    "command": "{{ fluentd_cmd }}",
     "config_files": [
         {
             "source": "{{ container_config_directory }}/td-agent.conf",
-            "dest": "/etc/td-agent/td-agent.conf",
-            "owner": "td-agent",
+            "dest": "{{ fluentd_dir }}/{{ fluentd_conf }}",
+            "owner": "{{ fluentd_user }}",
             "perm": "0600"
         },
+        {# Copy all configuration files in input/ directory to include #}
+        {# custom input configs. #}
         {
-            "source": "{{ container_config_directory }}/input/00-global.conf",
-            "dest": "/etc/td-agent/input/00-global.conf",
-            "owner": "td-agent",
+            "source": "{{ container_config_directory }}/input/*.conf",
+            "dest": "{{ fluentd_dir }}/input/",
+            "owner": "{{ fluentd_user }}",
             "perm": "0600"
         },
+        {# Copy all configuration files in filter/ directory to include #}
+        {# custom filter configs. #}
         {
-            "source": "{{ container_config_directory }}/input/02-mariadb.conf",
-            "dest": "/etc/td-agent/input/02-mariadb.conf",
-            "owner": "td-agent",
+            "source": "{{ container_config_directory }}/filter/*.conf",
+            "dest": "{{ fluentd_dir }}/filter/",
+            "owner": "{{ fluentd_user }}",
             "perm": "0600"
         },
+        {# Copy all configuration files in format/ directory to include #}
+        {# custom format configs. #}
         {
-            "source": "{{ container_config_directory }}/input/03-rabbitmq.conf",
-            "dest": "/etc/td-agent/input/03-rabbitmq.conf",
-            "owner": "td-agent",
+            "source": "{{ container_config_directory }}/format/*.conf",
+            "dest": "{{ fluentd_dir }}/format/",
+            "owner": "{{ fluentd_user }}",
             "perm": "0600"
         },
+        {# Copy all configuration files in output/ directory to include #}
+        {# custom output configs. #}
         {
-            "source": "{{ container_config_directory }}/input/01-syslog.conf",
-            "dest": "/etc/td-agent/input/01-syslog.conf",
-            "owner": "td-agent",
-            "perm": "0600"
-        },
-        {
-            "source": "{{ container_config_directory }}/filter/00-record_transformer.conf",
-            "dest": "/etc/td-agent/filter/00-record_transformer.conf",
-            "owner": "td-agent",
-            "perm": "0600"
-        },
-        {
-            "source": "{{ container_config_directory }}/filter/01-rewrite.conf",
-            "dest": "/etc/td-agent/filter/01-rewrite.conf",
-            "owner": "td-agent",
-            "perm": "0600"
-        },
-        {
-            "source": "{{ container_config_directory }}/format/apache_access.conf",
-            "dest": "/etc/td-agent/format/apache_access.conf",
-            "owner": "td-agent",
-            "perm": "0600"
-        },
-        {
-            "source": "{{ container_config_directory }}/format/wsgi_access.conf",
-            "dest": "/etc/td-agent/format/wsgi_access.conf",
-            "owner": "td-agent",
-            "perm": "0600"
-        },
-        {
-            "source": "{{ container_config_directory }}/format/wsgi_python.conf",
-            "dest": "/etc/td-agent/format/wsgi_python.conf",
-            "owner": "td-agent",
-            "perm": "0600"
-        },{% if enable_elasticsearch | bool or
-                ( elasticsearch_address != kolla_internal_vip_address ) | bool %}
-        {
-            "source": "{{ container_config_directory }}/output/01-es.conf",
-            "dest": "/etc/td-agent/output/01-es.conf",
-            "owner": "td-agent",
-            "perm": "0600"
-        },{% endif %}
-        {
-            "source": "{{ container_config_directory }}/output/00-local.conf",
-            "dest": "/etc/td-agent/output/00-local.conf",
-            "owner": "td-agent",
+            "source": "{{ container_config_directory }}/output/*.conf",
+            "dest": "{{ fluentd_dir }}/output/",
+            "owner": "{{ fluentd_user }}",
             "perm": "0600"
         }
     ],
     "permissions": [
         {
             "path": "/var/log/kolla/haproxy",
-            "owner": "td-agent:td-agent",
+            "owner": "{{ fluentd_user }}:{{ fluentd_user }}",
             "recurse": true
         },
         {
             "path": "/var/log/kolla/swift",
-            "owner": "td-agent:td-agent",
+            "owner": "{{ fluentd_user }}:{{ fluentd_user }}",
             "recurse": true
         }
     ]

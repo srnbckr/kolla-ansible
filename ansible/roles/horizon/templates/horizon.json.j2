@@ -18,6 +18,7 @@
     ( 'murano', enable_horizon_murano ),
     ( 'neutron', enable_neutron ),
     ( 'nova', enable_nova ),
+    ( 'qinling', enable_horizon_qinling ),
     ( 'sahara', enable_horizon_sahara ),
     ( 'searchlight', enable_horizon_searchlight ),
     ( 'senlin', enable_horizon_senlin ),
@@ -36,18 +37,23 @@
             "owner": "horizon",
             "perm": "0600"
         },
-{% for service, enabled in services if enabled | bool %}
+{% for path in custom_policy %}
         {
-            "source": "{{ container_config_directory }}/horizon/{{ service }}_policy.json",
-            "dest": "/etc/openstack-dashboard/{{ service }}_policy.json",
+            "source": "{{ container_config_directory }}/{{ path | basename }}",
+            "dest": "/etc/openstack-dashboard/{{ path | basename }}",
             "owner": "horizon",
-            "perm": "0600",
-            "optional": true
+            "perm": "0600"
         },
 {% endfor %}
         {
             "source": "{{ container_config_directory }}/local_settings",
             "dest": "/etc/openstack-dashboard/local_settings",
+            "owner": "horizon",
+            "perm": "0600"
+        },
+        {
+            "source": "{{ container_config_directory }}/custom_local_settings",
+            "dest": "/etc/openstack-dashboard/custom_local_settings",
             "owner": "horizon",
             "perm": "0600"
         }

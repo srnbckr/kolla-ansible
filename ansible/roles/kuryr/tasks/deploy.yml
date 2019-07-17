@@ -1,7 +1,11 @@
 ---
-- include: register.yml
+- include_tasks: register.yml
 
-- include: config.yml
+- include_tasks: config.yml
+
+- include_tasks: clone.yml
+  when:
+    - kuryr_dev_mode | bool
 
 - name: Flush handlers
   meta: flush_handlers

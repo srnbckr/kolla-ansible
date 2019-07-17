@@ -3,7 +3,10 @@
   file:
     path: "{{ node_config_directory }}/{{ item.key }}"
     state: "directory"
-    recurse: yes
+    owner: "{{ config_owner_user }}"
+    group: "{{ config_owner_group }}"
+    mode: "0770"
+  become: true
   when:
     - inventory_hostname in groups[item.value.group]
     - item.value.enabled | bool
@@ -12,12 +15,12 @@
 - name: Register binary python path
   command: echo /usr/lib/python2.7/site-packages
   register: python_path
-  when: kolla_install_type == 'binary'
+  when: vmtp_install_type == 'binary'
 
 - name: Register source python path
   command: echo /var/lib/kolla/venv/lib/python2.7/site-packages
   register: python_path
-  when: kolla_install_type != 'binary'
+  when: vmtp_install_type != 'binary'
 
 - name: Copying over configuration file for vmtp
   vars:
@@ -27,8 +30,9 @@
       - "{{ role_path }}/templates/{{ item }}.j2"
       - "{{ node_custom_config }}/{{ item }}"
       - "{{ node_custom_config }}/vmtp/{{ item }}"
-    dest: "{{ python_path }}/vmtp/{{ item }}"
-  register: vmtp_confs
+    dest: "{{ node_config_directory }}/vmtp/{{ item }}"
+    mode: "0660"
+  become: true
   when:
     - inventory_hostname in groups[service.group]
     - service.enabled | bool
@@ -38,15 +42,16 @@
     - Restart vmtp container
 
 - name: Check vmtp containers
+  become: true
   kolla_docker:
     action: "compare_container"
     common_options: "{{ docker_common_options }}"
     name: "{{ item.value.container_name }}"
     image: "{{ item.value.image }}"
     volumes: "{{ item.value.volumes }}"
-  register: check_vmtp_containers
+    dimensions: "{{ item.value.dimensions }}"
   when:
-    - action != "config"
+    - kolla_action != "config"
     - inventory_hostname in groups[item.value.group]
     - item.value.enabled | bool
   with_dict: "{{ vmtp_services }}"

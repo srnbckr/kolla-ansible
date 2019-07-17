@@ -1,4 +1,11 @@
 {
-    "command": "start-ovsdb-server {{ api_interface_address }} {% if orchestration_engine == 'KUBERNETES' %} {{ neutron_bridge_name }} {{ neutron_external_interface }} {% endif %}",
-    "config_files": []
+    "command": "start-ovsdb-server  {% if enable_onos | bool %} 0.0.0.0 {% else %} 127.0.0.1 {% endif %}",
+    "config_files": [
+        {
+            "source": "{{ container_config_directory }}/start-ovsdb-server",
+            "dest": "/usr/local/bin/start-ovsdb-server",
+            "owner": "root",
+            "perm": "0655"
+        }
+    ]
 }

@@ -40,16 +40,24 @@ Options:
     --key -k <key_path>                Specify path to ansible vault keyfile
     --help, -h                         Show this usage information
     --tags, -t <tags>                  Only run plays and tasks tagged with these values
+    --skip-tags <tags>                 Only run plays and tasks whose tags do not match these values
     --extra, -e <ansible variables>    Set additional variables as key=value or YAML/JSON passed to ansible-playbook
     --passwords <passwords_path>       Specify path to the passwords file
     --limit <host>                     Specify host to run plays
+    --forks <forks>                    Number of forks to run Ansible with
+    --vault-id <@prompt or path>       Specify @prompt or password file (Ansible >=  2.4)
+    --ask-vault-pass                   Ask for vault password
+    --vault-password-file <path>       Specify password file for vault decrypt
     --verbose, -v                      Increase verbosity of ansible-playbook
 
 Commands:
     prechecks           Do pre-deployment checks for hosts
     check               Do post-deployment smoke tests
     mariadb_recovery    Recover a completely stopped mariadb cluster
-    bootstrap-servers   bootstrap servers with kolla deploy dependencies
+    mariadb_backup      Take a backup of MariaDB databases
+                            --full (default)
+                            --incremental
+    bootstrap-servers   Bootstrap servers with kolla deploy dependencies
     destroy             Destroy Kolla containers, volumes and host configuration
                             --include-images to also destroy Kolla images
                             --include-dev to also destroy dev mode repos
@@ -62,6 +70,7 @@ Commands:
     stop                Stop Kolla containers
     certificates        Generate self-signed certificate for TLS *For Development Only*
     upgrade             Upgrades existing OpenStack Environment
+    upgrade-bifrost     Upgrades an existing bifrost container
     genconfig           Generate configuration files for enabled OpenStack services
 EOF
 }
@@ -73,14 +82,20 @@ cat <<EOF
 --configdir
 --key -k
 --help -h
+--skip-tags
 --tags -t
 --extra -e
 --passwords
 --limit
+--forks
+--vault-id
+--ask-vault-pass
+--vault-password-file
 --verbose -v
 prechecks
 check
 mariadb_recovery
+mariadb_backup
 bootstrap-servers
 destroy
 deploy
@@ -92,12 +107,15 @@ reconfigure
 stop
 certificates
 upgrade
+upgrade-bifrost
 genconfig
 EOF
 }
 
 SHORT_OPTS="hi:p:t:k:e:v"
-LONG_OPTS="help,inventory:,playbook:,tags:,key:,extra:,verbose,configdir:,passwords:,limit:,yes-i-really-really-mean-it,include-images,include-dev"
+LONG_OPTS="help,inventory:,playbook:,skip-tags:,tags:,key:,extra:,verbose,configdir:,passwords:,limit:,forks:,vault-id:,ask-vault-pass,vault-password-file:,yes-i-really-really-mean-it,include-images,include-dev:,full,incremental"
+
+RAW_ARGS="$*"
 ARGS=$(getopt -o "${SHORT_OPTS}" -l "${LONG_OPTS}" --name "$0" -- "$@") || { usage >&2; exit 2; }
 
 eval set -- "$ARGS"
@@ -113,6 +131,7 @@ PASSWORDS_FILE="${CONFIG_DIR}/passwords.yml"
 DANGER_CONFIRM=
 INCLUDE_IMAGES=
 INCLUDE_DEV=
+BACKUP_TYPE="full"
 # Serial is not recommended and disabled by default. Users can enable it by
 # configuring ANSIBLE_SERIAL variable.
 ANSIBLE_SERIAL=${ANSIBLE_SERIAL:-0}
@@ -127,6 +146,11 @@ while [ "$#" -gt 0 ]; do
 
     (--playbook|-p)
             PLAYBOOK="$2"
+            shift 2
+            ;;
+
+    (--skip-tags)
+            EXTRA_OPTS="$EXTRA_OPTS --skip-tags $2"
             shift 2
             ;;
 
@@ -146,7 +170,10 @@ while [ "$#" -gt 0 ]; do
             ;;
 
     (--yes-i-really-really-mean-it)
-            DANGER_CONFIRM="$1"
+            if [[ ${RAW_ARGS} =~ "$1" ]]
+            then
+                DANGER_CONFIRM="$1"
+            fi
             shift 1
             ;;
 
@@ -170,13 +197,45 @@ while [ "$#" -gt 0 ]; do
             EXTRA_OPTS="$EXTRA_OPTS -e $2"
             shift 2
             ;;
+
     (--passwords)
             PASSWORDS_FILE="$2"
             shift 2
             ;;
+
     (--limit)
             EXTRA_OPTS="$EXTRA_OPTS --limit $2"
             shift 2
+            ;;
+
+    (--forks)
+            EXTRA_OPTS="$EXTRA_OPTS --forks $2"
+            shift 2
+            ;;
+
+    (--vault-id)
+            EXTRA_OPTS="$EXTRA_OPTS --vault-id $2"
+            shift 2
+            ;;
+
+    (--ask-vault-pass)
+            VERBOSITY="$EXTRA_OPTS --ask-vault-pass"
+            shift 1
+            ;;
+
+    (--vault-password-file)
+            EXTRA_OPTS="$EXTRA_OPTS --vault-password-file $2"
+            shift 2
+            ;;
+
+    (--full)
+            BACKUP_TYPE="full"
+            shift 1
+            ;;
+
+    (--incremental)
+            BACKUP_TYPE="incremental"
+            shift 1
             ;;
 
     (--help|-h)
@@ -201,16 +260,21 @@ case "$1" in
 
 (prechecks)
         ACTION="Pre-deployment checking"
-        EXTRA_OPTS="$EXTRA_OPTS -e action=precheck"
+        EXTRA_OPTS="$EXTRA_OPTS -e kolla_action=precheck"
         ;;
 (check)
         ACTION="Post-deployment checking"
-        EXTRA_OPTS="$EXTRA_OPTS -e action=check"
+        EXTRA_OPTS="$EXTRA_OPTS -e kolla_action=check"
         ;;
 (mariadb_recovery)
         ACTION="Attempting to restart mariadb cluster"
-        EXTRA_OPTS="$EXTRA_OPTS -e action=deploy -e common_run=true"
+        EXTRA_OPTS="$EXTRA_OPTS -e kolla_action=deploy -e common_run=true"
         PLAYBOOK="${BASEDIR}/ansible/mariadb_recovery.yml"
+        ;;
+(mariadb_backup)
+        ACTION="Backup MariaDB databases"
+        EXTRA_OPTS="$EXTRA_OPTS -e kolla_action=backup -e mariadb_backup_type=${BACKUP_TYPE} -e common_run=true"
+        PLAYBOOK="${BASEDIR}/ansible/mariadb_backup.yml"
         ;;
 (destroy)
         ACTION="Destroy Kolla containers, volumes and host configuration"
@@ -232,23 +296,23 @@ EOF
         fi
         ;;
 (bootstrap-servers)
-        ACTION="Bootstraping servers"
+        ACTION="Bootstrapping servers"
         PLAYBOOK="${BASEDIR}/ansible/kolla-host.yml"
-        EXTRA_OPTS="$EXTRA_OPTS -e action=bootstrap-servers"
+        EXTRA_OPTS="$EXTRA_OPTS -e kolla_action=bootstrap-servers"
         ;;
 (deploy)
         ACTION="Deploying Playbooks"
-        EXTRA_OPTS="$EXTRA_OPTS -e action=deploy"
+        EXTRA_OPTS="$EXTRA_OPTS -e kolla_action=deploy"
         ;;
 (deploy-bifrost)
         ACTION="Deploying Bifrost"
         PLAYBOOK="${BASEDIR}/ansible/bifrost.yml"
-        EXTRA_OPTS="$EXTRA_OPTS -e action=deploy"
+        EXTRA_OPTS="$EXTRA_OPTS -e kolla_action=deploy"
         ;;
 (deploy-servers)
         ACTION="Deploying servers with bifrost"
         PLAYBOOK="${BASEDIR}/ansible/bifrost.yml"
-        EXTRA_OPTS="$EXTRA_OPTS -e action=deploy-servers"
+        EXTRA_OPTS="$EXTRA_OPTS -e kolla_action=deploy-servers"
         ;;
 (post-deploy)
         ACTION="Post-Deploying Playbooks"
@@ -256,19 +320,33 @@ EOF
         ;;
 (pull)
         ACTION="Pulling Docker images"
-        EXTRA_OPTS="$EXTRA_OPTS -e action=pull"
+        EXTRA_OPTS="$EXTRA_OPTS -e kolla_action=pull"
         ;;
 (upgrade)
         ACTION="Upgrading OpenStack Environment"
-        EXTRA_OPTS="$EXTRA_OPTS -e action=upgrade -e serial=${ANSIBLE_SERIAL}"
+        EXTRA_OPTS="$EXTRA_OPTS -e kolla_action=upgrade -e kolla_serial=${ANSIBLE_SERIAL}"
+        ;;
+(upgrade-bifrost)
+        ACTION="Upgrading Bifrost"
+        PLAYBOOK="${BASEDIR}/ansible/bifrost.yml"
+        EXTRA_OPTS="$EXTRA_OPTS -e kolla_action=upgrade"
         ;;
 (reconfigure)
         ACTION="Reconfigure OpenStack service"
-        EXTRA_OPTS="$EXTRA_OPTS -e action=reconfigure -e serial=${ANSIBLE_SERIAL}"
+        EXTRA_OPTS="$EXTRA_OPTS -e kolla_action=reconfigure -e kolla_serial=${ANSIBLE_SERIAL}"
         ;;
 (stop)
         ACTION="Stop Kolla containers"
-        PLAYBOOK="${BASEDIR}/ansible/stop.yml"
+        EXTRA_OPTS="$EXTRA_OPTS -e kolla_action=stop"
+        if [[ "${DANGER_CONFIRM}" != "--yes-i-really-really-mean-it" ]]; then
+            cat << EOF
+WARNING:
+    This will stop all deployed kolla containers, limit with tags is possible and also with
+    skip_stop_containers variable. To confirm, please add the following option:
+    --yes-i-really-really-mean-it
+EOF
+            exit 1
+        fi
         ;;
 (certificates)
         ACTION="Generate TLS Certificates"
@@ -276,7 +354,7 @@ EOF
         ;;
 (genconfig)
         ACTION="Generate configuration files for enabled OpenStack services"
-        EXTRA_OPTS="$EXTRA_OPTS -e action=config"
+        EXTRA_OPTS="$EXTRA_OPTS -e kolla_action=config"
         ;;
 (bash-completion)
         bash_completion

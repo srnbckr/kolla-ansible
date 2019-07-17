@@ -2,8 +2,9 @@
 debug = {{ keystone_logging_debug }}
 {% if enable_cadf_notifications | bool %}
 notification_format = cadf
-transport_url = rabbit://{% for host in groups['rabbitmq'] %}{{ rabbitmq_user }}:{{ rabbitmq_password }}@{% if orchestration_engine == 'KUBERNETES' %}rabbitmq{% else %}{{ hostvars[host]['ansible_' + hostvars[host]['api_interface']]['ipv4']['address'] }}{% endif %}:{{ rabbitmq_port }}{% if not loop.last %},{% endif %}{% endfor %}
 {% endif %}
+
+transport_url = {{ rpc_transport_url }}
 
 # NOTE(elemoine) log_dir alone does not work for Keystone
 log_file = /var/log/kolla/keystone/keystone.log
@@ -11,6 +12,11 @@ use_stderr = True
 
 [oslo_middleware]
 enable_proxy_headers_parsing = True
+
+{% if keystone_policy_file is defined %}
+[oslo_policy]
+policy_file = {{ keystone_policy_file }}
+{% endif %}
 
 [database]
 connection = mysql+pymysql://{{ keystone_database_user }}:{{ keystone_database_password }}@{{ keystone_database_address }}/{{ keystone_database_name }}
@@ -24,33 +30,30 @@ domain_config_dir = /etc/keystone/domains
 
 [token]
 revoke_by_id = False
-{% if keystone_token_provider == 'uuid' %}
-provider = uuid
-{% elif keystone_token_provider == 'fernet' %}
 provider = {{ keystone_token_provider }}
 expiration = {{ fernet_token_expiry }}
+allow_expired_window = {{ fernet_token_allow_expired_window }}
 
 [fernet_tokens]
-max_active_keys = {{ (groups['keystone'] | length) + 1 }}
-{% endif %}
+# Keystone docs note:
+#   max_active_keys =
+#     ((token_expiration + allow_expired_window) / rotation_frequency) + 2
+# https://docs.openstack.org/keystone/stein/admin/fernet-token-faq.html
+#
+# Use (x + y - 1) / y to round up integer division.
+max_active_keys = {{ ((fernet_token_expiry | int +
+                       fernet_token_allow_expired_window | int +
+                       fernet_key_rotation_interval | int - 1) //
+                      fernet_key_rotation_interval | int) + 2 }}
 
 [cache]
 backend = oslo_cache.memcache_pool
 enabled = True
-
-{# For Kolla-Ansible, generate the memcache servers based on the list of
-memcached servers in the inventory and memcached_servers should be un-set.
-For Kolla-Kubernetes,  it is necessary to define the memcached_servers
-variable in globals.yml to set it to the Kubernetes service for memcached. #}
-
-{% if orchestration_engine == 'KUBERNETES' %}
-memcache_servers = {{ memcached_servers }}
-{% else %}
 memcache_servers = {% for host in groups['memcached'] %}{{ hostvars[host]['ansible_' + hostvars[host]['api_interface']]['ipv4']['address'] }}:{{ memcached_port }}{% if not loop.last %},{% endif %}{% endfor %}
-{%- endif %}
 
-{% if enable_cadf_notifications | bool %}
 [oslo_messaging_notifications]
+transport_url = {{ notify_transport_url }}
+{% if enable_cadf_notifications | bool %}
 driver = messagingv2
 {% endif %}
 
@@ -59,7 +62,10 @@ driver = messagingv2
 enabled = true
 trace_sqlalchemy = true
 hmac_keys = {{ osprofiler_secret }}
-{% if enable_elasticsearch | bool %}
-connection_string = elasticsearch://{{ elasticsearch_address }}:{{ elasticsearch_port }}
+connection_string = {{ osprofiler_backend_connection_string }}
 {% endif %}
+
+{% if enable_grafana | bool %}
+[cors]
+allowed_origin = {{ public_protocol }}://{{ kolla_external_fqdn }}:{{ grafana_server_port }}
 {% endif %}

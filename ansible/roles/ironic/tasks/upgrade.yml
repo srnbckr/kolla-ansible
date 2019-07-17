@@ -1,6 +1,6 @@
 ---
-- include: config.yml
+- include_tasks: rolling_upgrade.yml
+  when: ironic_enable_rolling_upgrade | bool
 
-- include: bootstrap_service.yml
-
-- include: start.yml
+- include_tasks: legacy_upgrade.yml
+  when: not ironic_enable_rolling_upgrade | bool

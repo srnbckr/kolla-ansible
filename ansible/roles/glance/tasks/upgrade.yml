@@ -1,7 +1,6 @@
 ---
-- include: config.yml
+- include_tasks: rolling_upgrade.yml
+  when: glance_enable_rolling_upgrade | bool
 
-- include: bootstrap_service.yml
-
-- name: Flush handlers
-  meta: flush_handlers
+- include_tasks: legacy_upgrade.yml
+  when: not glance_enable_rolling_upgrade | bool

@@ -1,7 +1,15 @@
-{% set python_path = '/usr/lib/python2.7/site-packages' if kolla_install_type == 'binary' else '/var/lib/kolla/venv/lib/python2.7/site-packages' %}
-Listen {{ api_interface_address }}:{{ cinder_api_port }}
+{% if cinder_install_type == 'binary' %}
+    {% set python_path = '/usr/lib/python3/dist-packages' if kolla_base_distro == 'ubuntu' else '/usr/lib/python2.7/site-packages' %}
+{% else %}
+    {% set python_path = '/var/lib/kolla/venv/lib/python2.7/site-packages' %}
+{% endif %}
+Listen {{ api_interface_address }}:{{ cinder_api_listen_port }}
 
-<VirtualHost *:{{ cinder_api_port }}>
+ServerSignature Off
+ServerTokens Prod
+TraceEnable off
+
+<VirtualHost *:{{ cinder_api_listen_port }}>
     WSGIDaemonProcess cinder-api processes={{ openstack_service_workers }} threads=1 user=cinder group=cinder display-name=%{GROUP} python-path={{ python_path }}
     WSGIProcessGroup cinder-api
     WSGIScriptAlias / /var/www/cgi-bin/cinder/cinder-wsgi
@@ -11,5 +19,6 @@ Listen {{ api_interface_address }}:{{ cinder_api_port }}
       ErrorLogFormat "%{cu}t %M"
     </IfVersion>
     ErrorLog /var/log/kolla/cinder/cinder-api.log
-    CustomLog /var/log/kolla/cinder/cinder-api-access.log combined
+    LogFormat "%{X-Forwarded-For}i %l %u %t \"%r\" %>s %b %D \"%{Referer}i\" \"%{User-Agent}i\"" logformat
+    CustomLog /var/log/kolla/cinder/cinder-api-access.log logformat
 </VirtualHost>

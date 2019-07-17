@@ -3,7 +3,10 @@
   file:
     path: "{{ node_config_directory }}/{{ project_name }}"
     state: "directory"
-    recurse: yes
+    owner: "{{ config_owner_user }}"
+    group: "{{ config_owner_group }}"
+    mode: "0770"
+  become: true
   when:
     - inventory_hostname in groups[item.value.group]
     - item.value.enabled | bool
@@ -13,33 +16,76 @@
   template:
     src: "{{ item.key }}.json.j2"
     dest: "{{ node_config_directory }}/{{ project_name }}/config.json"
-  register: rabbitmq_config_jsons
+    mode: "0660"
+  become: true
   when:
     - inventory_hostname in groups[item.value.group]
     - item.value.enabled | bool
   with_dict: "{{ rabbitmq_services }}"
   notify:
-    - Restart rabbitmq container
+    - Restart rabbitmq container (first node)
+    - Restart rabbitmq container (rest of nodes)
 
-- name: Copying over rabbitmq configs
+- name: Copying over rabbitmq-env.conf
+  become: true
   vars:
     service: "{{ rabbitmq_services['rabbitmq'] }}"
   template:
-    src: "{{ item }}.j2"
-    dest: "{{ node_config_directory }}/{{ project_name }}/{{ item }}"
-  register: rabbitmq_confs
+    src: "{{ item }}"
+    dest: "{{ node_config_directory }}/{{ project_name }}/rabbitmq-env.conf"
+    mode: "0660"
+  with_first_found:
+    - "{{ node_custom_config }}/rabbitmq/{{ inventory_hostname }}/rabbitmq-env.conf"
+    - "{{ node_custom_config }}/rabbitmq/rabbitmq-env.conf"
+    - "rabbitmq-env.conf.j2"
   when:
     - inventory_hostname in groups[service.group]
     - service.enabled | bool
-  with_items:
-     - "rabbitmq-env.conf"
-     - "rabbitmq.config"
-     - "rabbitmq-clusterer.config"
-     - "definitions.json"
   notify:
-    - Restart rabbitmq container
+    - Restart rabbitmq container (first node)
+    - Restart rabbitmq container (rest of nodes)
+
+
+- name: Copying over rabbitmq.conf
+  become: true
+  vars:
+    service: "{{ rabbitmq_services['rabbitmq'] }}"
+  template:
+    src: "{{ item }}"
+    dest: "{{ node_config_directory }}/{{ project_name }}/rabbitmq.conf"
+    mode: "0660"
+  with_first_found:
+    - "{{ node_custom_config }}/rabbitmq/{{ inventory_hostname }}/rabbitmq.conf"
+    - "{{ node_custom_config }}/rabbitmq/rabbitmq.conf"
+    - "rabbitmq.conf.j2"
+  when:
+    - inventory_hostname in groups[service.group]
+    - service.enabled | bool
+  notify:
+    - Restart rabbitmq container (first node)
+    - Restart rabbitmq container (rest of nodes)
+
+- name: Copying over definitions.json
+  become: true
+  vars:
+    service: "{{ rabbitmq_services['rabbitmq'] }}"
+  template:
+    src: "{{ item }}"
+    dest: "{{ node_config_directory }}/{{ project_name }}/definitions.json"
+    mode: "0660"
+  with_first_found:
+    - "{{ node_custom_config }}/rabbitmq/{{ inventory_hostname }}/definitions.json"
+    - "{{ node_custom_config }}/rabbitmq/definitions.json"
+    - "definitions.json.j2"
+  when:
+    - inventory_hostname in groups[service.group]
+    - service.enabled | bool
+  notify:
+    - Restart rabbitmq container (first node)
+    - Restart rabbitmq container (rest of nodes)
 
 - name: Check rabbitmq containers
+  become: true
   kolla_docker:
     action: "compare_container"
     common_options: "{{ docker_common_options }}"
@@ -47,11 +93,12 @@
     image: "{{ item.value.image }}"
     volumes: "{{ item.value.volumes }}"
     environment: "{{ item.value.environment }}"
-  register: check_rabbitmq_containers
+    dimensions: "{{ item.value.dimensions }}"
   when:
-    - action != "config"
+    - kolla_action != "config"
     - inventory_hostname in groups[item.value.group]
     - item.value.enabled | bool
   with_dict: "{{ rabbitmq_services }}"
   notify:
-    - Restart rabbitmq container
+    - Restart rabbitmq container (first node)
+    - Restart rabbitmq container (rest of nodes)

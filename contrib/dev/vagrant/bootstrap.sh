@@ -10,6 +10,12 @@ VM=$1
 MODE=$2
 KOLLA_PATH=$3
 KOLLA_ANSIBLE_PATH=$4
+KOLLA_CLI_PATH=$5
+NUMBER_OF_COMPUTE_NODES=$6
+NUMBER_OF_STORAGE_NODES=$7
+NUMBER_OF_NETWORK_NODES=$8
+NUMBER_OF_CONTROL_NODES=$9
+NUMBER_OF_MONITOR_NODES=$10
 
 export http_proxy=
 export https_proxy=
@@ -55,20 +61,24 @@ function is_centos {
 
 # Install common packages and do some prepwork.
 function prep_work {
-    if [[ "$(systemctl is-enabled firewalld)" == "enabled" ]]; then
-        systemctl stop firewalld
-        systemctl disable firewalld
-    fi
 
     # This removes the fqdn from /etc/hosts's 127.0.0.1. This name.local will
     # resolve to the public IP instead of localhost.
     sed -i -r "s,^127\.0\.0\.1\s+.*,127\.0\.0\.1   localhost localhost.localdomain localhost4 localhost4.localdomain4," /etc/hosts
 
     if is_centos; then
+        if [[ "$(systemctl is-enabled firewalld)" == "enabled" ]]; then
+            systemctl stop firewalld
+            systemctl disable firewalld
+        fi
         yum -y install epel-release
         rpm --import /etc/pki/rpm-gpg/RPM-GPG-KEY-EPEL-7
         yum -y install MySQL-python vim-enhanced python-pip python-devel gcc openssl-devel libffi-devel libxml2-devel libxslt-devel
     elif is_ubuntu; then
+        if [[ "$(systemctl is-enabled ufw)" == "enabled" ]]; then
+            systemctl stop ufw
+            systemctl disable ufw
+        fi
         apt-get update
         apt-get -y install python-mysqldb python-pip python-dev build-essential libssl-dev libffi-dev libxml2-dev libxslt-dev
     else
@@ -76,7 +86,7 @@ function prep_work {
         exit 1
     fi
 
-    pip install --upgrade docker-py
+    pip install --upgrade docker
 }
 
 # Do some cleanup after the installation of kolla
@@ -146,14 +156,60 @@ function configure_kolla {
     # Use local docker registry
     sed -i -r "s,^[# ]*namespace *=.+$,namespace = ${REGISTRY}/lokolla," /etc/kolla/kolla-build.conf
     sed -i -r "s,^[# ]*push *=.+$,push = True," /etc/kolla/kolla-build.conf
-    sed -i -r "s,^[# ]*docker_registry:.+$,docker_registry: \"${REGISTRY}\"," /etc/kolla/globals.yml
-    sed -i -r "s,^[# ]*docker_namespace:.+$,docker_namespace: \"lokolla\"," /etc/kolla/globals.yml
-    sed -i -r "s,^[# ]*docker_insecure_registry:.+$,docker_insecure_registry: \"True\"," /etc/kolla/globals.yml
+    kolla-cli property set docker_registry ${REGISTRY}
+    kolla-cli property set docker_namespace lokolla
+    kolla-cli property set docker_insecure_registry True
     # Set network interfaces
-    sed -i -r "s,^[# ]*network_interface:.+$,network_interface: \"eth1\"," /etc/kolla/globals.yml
-    sed -i -r "s,^[# ]*neutron_external_interface:.+$,neutron_external_interface: \"eth2\"," /etc/kolla/globals.yml
+    kolla-cli property set network_interface eth1
+    kolla-cli property set neutron_external_interface eth2
     # Set VIP address to be on the vagrant private network
-    sed -i -r "s,^[# ]*kolla_internal_vip_address:.+$,kolla_internal_vip_address: \"172.28.128.254\"," /etc/kolla/globals.yml
+    kolla-cli property set kolla_internal_vip_address 172.28.128.254
+}
+
+function configure_kolla_cli {
+    # Run the CLI setup script
+    pushd ${KOLLA_CLI_PATH}
+    python ./cli_setup.py
+    popd
+
+    # Set up the kolla-cli inventory
+    if [ "$MODE" == 'aio' ]; then
+        kolla-cli setdeploy local
+        kolla-cli host add localhost
+        for group in control deployment compute monitoring network storage; do
+            kolla-cli group addhost $group localhost
+        done
+    else
+        for node_num in $(seq 1 ${NUMBER_OF_COMPUTE_NODES}); do
+            node_name="compute0${node_num}"
+            kolla-cli host add $node_name
+            kolla-cli group addhost compute $node_name
+        done
+
+        for node_num in $(seq 1 ${NUMBER_OF_STORAGE_NODES}); do
+            node_name="storage0${node_num}"
+            kolla-cli host add $node_name
+            kolla-cli group addhost storage $node_name
+        done
+
+        for node_num in $(seq 1 ${NUMBER_OF_NETWORK_NODES}); do
+            node_name="network0${node_num}"
+            kolla-cli host add $node_name
+            kolla-cli group addhost network $node_name
+        done
+
+        for node_num in $(seq 1 ${NUMBER_OF_CONTROL_NODES}); do
+            node_name="control0${node_num}"
+            kolla-cli host add $node_name
+            kolla-cli group addhost control $node_name
+        done
+
+        for node_num in $(seq 1 ${NUMBER_OF_MONITOR_NODES}); do
+            node_name="monitor0${node_num}"
+            kolla-cli host add $node_name
+            kolla-cli group addhost monitoring $node_name
+        done
+    fi
 }
 
 # Configure the operator node and install some additional packages.
@@ -171,6 +227,7 @@ function configure_operator {
 
     pip install ${KOLLA_ANSIBLE_PATH}
     pip install ${KOLLA_PATH}
+    pip install ${KOLLA_CLI_PATH}
 
     # Set selinux to permissive
     if [[ "$(getenforce)" == "Enforcing" ]]; then
@@ -179,12 +236,14 @@ function configure_operator {
     fi
 
     tox -c ${KOLLA_PATH}/tox.ini -e genconfig
-    cp -r ${KOLLA_ANSIBLE_PATH}/etc/kolla/ /etc/kolla
+    mkdir -p /etc/kolla
+    cp -r ${KOLLA_ANSIBLE_PATH}/etc/kolla/* /etc/kolla
     cp -r ${KOLLA_PATH}/etc/kolla/* /etc/kolla
     ${KOLLA_ANSIBLE_PATH}/tools/generate_passwords.py
     mkdir -p /usr/share/kolla
     chown -R vagrant: /etc/kolla /usr/share/kolla
 
+    configure_kolla_cli
     configure_kolla
 
     # Make sure Ansible uses scp.
@@ -201,7 +260,8 @@ EOF
     mkdir -p /etc/kolla/config/nova/
     cat > /etc/kolla/config/nova/nova-compute.conf <<EOF
 [libvirt]
-virt_type=qemu
+virt_type = qemu
+cpu_mode = none
 EOF
 
     # Launch a local registry (and mirror) to speed up pulling images.

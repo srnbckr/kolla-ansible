@@ -3,36 +3,42 @@
   file:
     path: "{{ node_config_directory }}/{{ item.key }}"
     state: "directory"
-    recurse: yes
+    owner: "{{ config_owner_user }}"
+    group: "{{ config_owner_group }}"
+    mode: "0770"
+  become: true
   when:
     - item.value.enabled | bool
-    - item.value.host_in_groups | bool
+    - inventory_hostname in groups[item.value.group]
   with_dict: "{{ etcd_services }}"
 
 - name: Copying over config.json files for services
   template:
     src: "{{ item.key }}.json.j2"
     dest: "{{ node_config_directory }}/{{ item.key }}/config.json"
-  register: etcd_config_jsons
+    mode: "0660"
+  become: true
   when:
     - item.value.enabled | bool
-    - item.value.host_in_groups | bool
+    - inventory_hostname in groups[item.value.group]
   with_dict: "{{ etcd_services }}"
   notify:
-    - Restart etcd container
+    - Restart {{ item.key }} container
 
 - name: Check etcd containers
+  become: true
   kolla_docker:
     action: "compare_container"
     common_options: "{{ docker_common_options }}"
     name: "{{ item.value.container_name }}"
     image: "{{ item.value.image }}"
     volumes: "{{ item.value.volumes }}"
-  register: check_etcd_containers
+    dimensions: "{{ item.value.dimensions }}"
+    environment: "{{ item.value.environment }}"
   when:
-    - action != "config"
+    - kolla_action != "config"
     - item.value.enabled | bool
-    - item.value.host_in_groups | bool
+    - inventory_hostname in groups[item.value.group]
   with_dict: "{{ etcd_services }}"
   notify:
-    - Restart etcd container
+    - Restart {{ item.key }} container

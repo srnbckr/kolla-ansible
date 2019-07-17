@@ -2,29 +2,70 @@
 project_name: "tacker"
 
 tacker_services:
-  tacker:
-    container_name: "tacker"
-    group: "tacker"
+  tacker-server:
+    container_name: "tacker_server"
+    group: "tacker-server"
     enabled: true
-    image: "{{ tacker_image_full }}"
-    volumes:
-      - "{{ node_config_directory }}/tacker/:{{ container_config_directory }}/:ro"
-      - "/etc/localtime:/etc/localtime:ro"
-      - "kolla_logs:/var/log/kolla/"
+    image: "{{ tacker_server_image_full }}"
+    volumes: "{{ tacker_server_default_volumes + tacker_server_extra_volumes }}"
+    dimensions: "{{ tacker_server_dimensions }}"
+    haproxy:
+      tacker_server:
+        enabled: "{{ enable_tacker }}"
+        mode: "http"
+        external: false
+        port: "{{ tacker_server_port }}"
+      tacker_server_external:
+        enabled: "{{ enable_tacker }}"
+        mode: "http"
+        external: true
+        port: "{{ tacker_server_port }}"
+  tacker-conductor:
+    container_name: "tacker_conductor"
+    group: "tacker-conductor"
+    enabled: true
+    image: "{{ tacker_conductor_image_full }}"
+    volumes: "{{ tacker_conductor_default_volumes + tacker_conductor_extra_volumes }}"
+    dimensions: "{{ tacker_conductor_dimensions }}"
 
 ####################
 # Database
 ####################
 tacker_database_name: "tacker"
-tacker_database_user: "tacker"
-tacker_database_address: "{{ kolla_internal_fqdn }}:{{ database_port }}"
+tacker_database_user: "{% if use_preconfigured_databases | bool and use_common_mariadb_user | bool %}{{ database_user }}{% else %}tacker{% endif %}"
+tacker_database_address: "{{ database_address }}:{{ database_port }}"
 
 ########
 # Docker
 ########
-tacker_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/{{ kolla_base_distro }}-{{ kolla_install_type }}-tacker"
+tacker_install_type: "{{ kolla_install_type }}"
 tacker_tag: "{{ openstack_release }}"
-tacker_image_full: "{{ tacker_image }}:{{ tacker_tag }}"
+
+tacker_server_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/{{ kolla_base_distro }}-{{ tacker_install_type }}-tacker-server"
+tacker_server_tag: "{{ tacker_tag }}"
+tacker_server_image_full: "{{ tacker_server_image }}:{{ tacker_server_tag }}"
+
+tacker_conductor_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/{{ kolla_base_distro }}-{{ tacker_install_type }}-tacker-conductor"
+tacker_conductor_tag: "{{ tacker_tag }}"
+tacker_conductor_image_full: "{{ tacker_conductor_image }}:{{ tacker_conductor_tag }}"
+
+tacker_server_dimensions: "{{ default_container_dimensions }}"
+tacker_conductor_dimensions: "{{ default_container_dimensions }}"
+
+tacker_server_default_volumes:
+  - "{{ node_config_directory }}/tacker-server/:{{ container_config_directory }}/:ro"
+  - "{{ kolla_dev_repos_directory ~ '/tacker/tacker:/var/lib/kolla/venv/lib/python2.7/site-packages/tacker' if tacker_dev_mode | bool else '' }}"
+  - "/etc/localtime:/etc/localtime:ro"
+  - "kolla_logs:/var/log/kolla/"
+tacker_conductor_default_volumes:
+  - "{{ node_config_directory }}/tacker-conductor/:{{ container_config_directory }}/:ro"
+  - "{{ kolla_dev_repos_directory ~ '/tacker/tacker:/var/lib/kolla/venv/lib/python2.7/site-packages/tacker' if tacker_dev_mode | bool else '' }}"
+  - "/etc/localtime:/etc/localtime:ro"
+  - "kolla_logs:/var/log/kolla/"
+
+tacker_extra_volumes: "{{ default_extra_volumes }}"
+tacker_server_extra_volumes: "{{ tacker_extra_volumes }}"
+tacker_conductor_extra_volumes: "{{ tacker_extra_volumes }}"
 
 ####################
 # OpenStack
@@ -38,3 +79,11 @@ tacker_logging_debug: "{{ openstack_logging_debug }}"
 tacker_keystone_user: "tacker"
 
 openstack_tacker_auth: "{{ openstack_auth }}"
+
+###################
+# Kolla
+####################
+tacker_git_repository: "{{ kolla_dev_repos_git }}/{{ project_name }}"
+tacker_dev_repos_pull: "{{ kolla_dev_repos_pull }}"
+tacker_dev_mode: "{{ kolla_dev_mode }}"
+tacker_source_version: "{{ kolla_source_version }}"

@@ -7,6 +7,11 @@ rabbitmq_services:
     group: "{{ role_rabbitmq_groups }}"
     enabled: true
     image: "{{ rabbitmq_image_full }}"
+    bootstrap_environment:
+      KOLLA_BOOTSTRAP:
+      KOLLA_CONFIG_STRATEGY: "{{ config_strategy }}"
+      RABBITMQ_CLUSTER_COOKIE: "{{ role_rabbitmq_cluster_cookie }}"
+      RABBITMQ_LOG_DIR: "/var/log/kolla/{{ project_name }}"
     environment:
       KOLLA_CONFIG_STRATEGY: "{{ config_strategy }}"
       RABBITMQ_CLUSTER_COOKIE: "{{ role_rabbitmq_cluster_cookie }}"
@@ -16,6 +21,35 @@ rabbitmq_services:
       - "/etc/localtime:/etc/localtime:ro"
       - "{{ project_name }}:/var/lib/rabbitmq/"
       - "kolla_logs:/var/log/kolla/"
+    dimensions: "{{ rabbitmq_dimensions }}"
+    haproxy:
+      rabbitmq_management:
+        enabled: "{{ enable_rabbitmq }}"
+        mode: "http"
+        port: "{{ rabbitmq_management_port }}"
+        host_group: "rabbitmq"
+      rabbitmq_outward_management:
+        enabled: "{{ enable_outward_rabbitmq }}"
+        mode: "http"
+        port: "{{ outward_rabbitmq_management_port }}"
+        host_group: "outward-rabbitmq"
+      rabbitmq_outward_external:
+        enabled: "{{ enable_outward_rabbitmq }}"
+        mode: "tcp"
+        external: true
+        port: "{{ outward_rabbitmq_port }}"
+        host_group: "outward-rabbitmq"
+        frontend_tcp_extra:
+          - "timeout client {{ haproxy_outward_rabbitmq_client_timeout }}"
+        backend_tcp_extra:
+          - "timeout server {{ haproxy_outward_rabbitmq_server_timeout }}"
+
+
+####################
+# HAProxy
+####################
+haproxy_outward_rabbitmq_client_timeout: "1h"
+haproxy_outward_rabbitmq_server_timeout: "1h"
 
 
 ####################
@@ -24,6 +58,7 @@ rabbitmq_services:
 rabbitmq_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/{{ kolla_base_distro }}-{{ kolla_install_type }}-rabbitmq"
 rabbitmq_tag: "{{ openstack_release }}"
 rabbitmq_image_full: "{{ rabbitmq_image }}:{{ rabbitmq_tag }}"
+rabbitmq_dimensions: "{{ default_container_dimensions }}"
 
 
 ####################
@@ -32,3 +67,4 @@ rabbitmq_image_full: "{{ rabbitmq_image }}:{{ rabbitmq_tag }}"
 rabbitmq_user: "openstack"
 rabbitmq_cluster_name: "openstack"
 rabbitmq_hostname: "{{ ansible_hostname }}"
+rabbitmq_pid_file: "/var/lib/rabbitmq/mnesia/rabbitmq.pid"

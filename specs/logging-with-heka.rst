@@ -62,7 +62,7 @@ run it on every node of the cluster. In contrast, Logstash runs in a JVM and
 is known [3] to be too heavy to run on every node.
 
 Another important aspect is flow control and avoiding the loss of log messages
-in case of overload. Heka’s filter and output plugins, and the Elasticsearch
+in case of overload. Heka's filter and output plugins, and the Elasticsearch
 output plugin in particular, support the use of a disk based message queue.
 This message queue allows plugins to reprocess messages from the queue when
 downstream servers (Elasticsearch) are down or cannot keep up with the data
@@ -304,10 +304,10 @@ The location of log files on the host will be mentioned in the documentation.
 References
 ==========
 
-[1] <https://review.openstack.org/#/c/252968/>
+[1] <https://review.opendev.org/#/c/252968/>
 [2] <http://hekad.readthedocs.org>
 [3] <http://blog.sematext.com/2015/09/28/recipe-rsyslog-redis-logstash/>
-[4] <https://review.openstack.org/#/c/269745/>
+[4] <https://review.opendev.org/#/c/269745/>
 [5] <http://hekad.readthedocs.org/en/latest/config/inputs/docker_log.html>
 [6] <http://hekad.readthedocs.org/en/latest/config/inputs/logstreamer.html>
-[7] <https://review.openstack.org/#/c/269952/>
+[7] <https://review.opendev.org/#/c/269952/>

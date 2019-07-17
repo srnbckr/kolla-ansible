@@ -1,5 +1,6 @@
 ---
 - name: Creating tacker database
+  become: true
   kolla_toolbox:
     module_name: mysql_db
     module_args:
@@ -8,11 +9,13 @@
       login_user: "{{ database_user }}"
       login_password: "{{ database_password }}"
       name: "{{ tacker_database_name }}"
-  register: database
   run_once: True
-  delegate_to: "{{ groups['tacker'][0] }}"
+  delegate_to: "{{ groups['tacker-server'][0] }}"
+  when:
+    - not use_preconfigured_databases | bool
 
 - name: Creating tacker database user and setting permissions
+  become: true
   kolla_toolbox:
     module_name: mysql_user
     module_args:
@@ -26,7 +29,8 @@
       priv: "{{ tacker_database_name }}.*:ALL"
       append_privs: "yes"
   run_once: True
-  delegate_to: "{{ groups['tacker'][0] }}"
+  delegate_to: "{{ groups['tacker-server'][0] }}"
+  when:
+    - not use_preconfigured_databases | bool
 
-- include: bootstrap_service.yml
-  when: database.changed
+- include_tasks: bootstrap_service.yml

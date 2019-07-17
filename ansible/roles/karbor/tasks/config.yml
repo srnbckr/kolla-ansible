@@ -3,7 +3,10 @@
   file:
     path: "{{ node_config_directory }}/{{ item.key }}/providers.d"
     state: "directory"
-    recurse: yes
+    owner: "{{ config_owner_user }}"
+    group: "{{ config_owner_group }}"
+    mode: "0770"
+  become: true
   when:
     - inventory_hostname in groups[item.value.group]
     - item.value.enabled | bool
@@ -13,15 +16,14 @@
   template:
     src: "{{ item.key }}.json.j2"
     dest: "{{ node_config_directory }}/{{ item.key }}/config.json"
-  register: karbor_config_jsons
+    mode: "0660"
+  become: true
   when:
     - inventory_hostname in groups[item.value.group]
     - item.value.enabled | bool
   with_dict: "{{ karbor_services }}"
   notify:
-    - Restart karbor-api container
-    - Restart karbor-protection container
-    - Restart karbor-operationengine container
+    - Restart {{ item.key }} container
 
 - name: Copying over karbor.conf
   vars:
@@ -30,30 +32,47 @@
     sources:
       - "{{ role_path }}/templates/karbor.conf.j2"
       - "{{ node_custom_config }}/global.conf"
-      - "{{ node_custom_config }}/database.conf"
-      - "{{ node_custom_config }}/messaging.conf"
       - "{{ node_custom_config }}/karbor.conf"
       - "{{ node_custom_config }}/karbor/{{ item.key }}.conf"
       - "{{ node_custom_config }}/karbor/{{ inventory_hostname }}/karbor.conf"
     dest: "{{ node_config_directory }}/{{ item.key }}/karbor.conf"
-  register: karbor_confs
+    mode: "0660"
+  become: true
   when:
     - inventory_hostname in groups[item.value.group]
     - item.value.enabled | bool
   with_dict: "{{ karbor_services }}"
   notify:
-    - Restart karbor-api container
+    - Restart {{ item.key }} container
+
+- name: Copying over provider configs
+  vars:
+    service_name: 'karbor-protection'
+    service: "{{ karbor_services[service_name] }}"
+  copy:
+    src: "{{ item }}"
+    dest: "{{ node_config_directory }}/{{ service_name }}/providers.d/"
+    mode: "0660"
+  become: true
+  with_fileglob:
+    - "{{ node_custom_config }}/karbor/{{ service_name }}/providers.d/*"
+  when:
+    - inventory_hostname in groups[service.group]
+    - service.enabled | bool
+  notify:
     - Restart karbor-protection container
-    - Restart karbor-operationengine container
 
 - name: Copying over openstack-infra.conf
   vars:
     service_name: 'karbor-protection'
     service: "{{ karbor_services[service_name] }}"
-  template:
-    src: "providers.d/openstack-infra.conf.j2"
+  merge_configs:
+    sources:
+      - "{{ role_path }}/templates/providers.d/openstack-infra.conf.j2"
+      - "{{ node_custom_config }}/karbor/{{ service_name }}/providers.d/openstack-infra.conf"
     dest: "{{ node_config_directory }}/{{ service_name }}/providers.d/openstack-infra.conf"
-  register: openstack_infra_conf
+    mode: "0660"
+  become: true
   when:
     - inventory_hostname in groups[service.group]
     - service.enabled | bool
@@ -61,19 +80,18 @@
     - Restart karbor-protection container
 
 - name: Check karbor containers
+  become: true
   kolla_docker:
     action: "compare_container"
     common_options: "{{ docker_common_options }}"
     name: "{{ item.value.container_name }}"
     image: "{{ item.value.image }}"
     volumes: "{{ item.value.volumes }}"
-  register: check_karbor_containers
+    dimensions: "{{ item.value.dimensions }}"
   when:
-    - action != "config"
+    - kolla_action != "config"
     - inventory_hostname in groups[item.value.group]
     - item.value.enabled | bool
   with_dict: "{{ karbor_services }}"
   notify:
-    - Restart karbor-api container
-    - Restart karbor-protection container
-    - Restart karbor-operationengine container
+    - Restart {{ item.key }} container

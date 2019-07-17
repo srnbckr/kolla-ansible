@@ -1,10 +1,6 @@
 ---
-- name: Check whether the swift service is enabled
-  local_action: fail msg='Ceph-rgw-keystone is conflicted with swift, you should only enable one of them'
-  when: enable_swift | bool
-  run_once: True
-
 - name: Creating the Swift service and endpoint
+  become: true
   kolla_toolbox:
     module_name: kolla_keystone_service
     module_args:
@@ -15,11 +11,35 @@
       url: "{{ item.url }}"
       interface: "{{ item.interface }}"
       region_name: "{{ openstack_region_name }}"
-      auth: "{{ '{{ openstack_swift_auth }}' }}"
-    module_extra_vars:
-      openstack_swift_auth: "{{ openstack_swift_auth }}"
+      auth: "{{ openstack_ceph_rgw_auth }}"
+      endpoint_type: "{{ openstack_interface }}"
   run_once: True
   with_items:
     - {'interface': 'admin', 'url': '{{ swift_admin_endpoint }}'}
     - {'interface': 'internal', 'url': '{{ swift_internal_endpoint }}'}
     - {'interface': 'public', 'url': '{{ swift_public_endpoint }}'}
+
+- name: Registering keystone ceph_rgw user
+  become: true
+  kolla_toolbox:
+    module_name: kolla_keystone_user
+    module_args:
+      project: "service"
+      user: "{{ ceph_rgw_keystone_user }}"
+      password: "{{ ceph_rgw_keystone_password }}"
+      role: "admin"
+      region_name: "{{ openstack_region_name }}"
+      auth: "{{ openstack_ceph_rgw_auth }}"
+      endpoint_type: "{{ openstack_interface }}"
+  run_once: True
+
+- name: Creating the ResellerAdmin role
+  become: true
+  kolla_toolbox:
+    module_name: "os_keystone_role"
+    module_args:
+      name: "ResellerAdmin"
+      region_name: "{{ openstack_region_name }}"
+      auth: "{{ openstack_ceph_rgw_auth }}"
+      endpoint_type: "{{ openstack_interface }}"
+  run_once: True

@@ -1,0 +1,11 @@
+---
+- import_playbook: detect-release.yml
+  vars:
+    detect_release_hosts: mariadb
+
+- name: Backup MariaDB
+  hosts: mariadb
+  roles:
+    - { role: mariadb,
+        tags: mariadb,
+        when: enable_xtrabackup | bool }
